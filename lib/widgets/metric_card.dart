@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-class MetricCard extends StatelessWidget {
+class MetricCard extends StatefulWidget {
   final String title;
   final IconData icon;
   final Color iconColor;
@@ -21,82 +21,235 @@ class MetricCard extends StatelessWidget {
   });
 
   @override
+  State<MetricCard> createState() => _MetricCardState();
+}
+
+class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late AnimationController _scaleController;
+  late Animation<double> _pulseAnimation;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupAnimations();
+  }
+
+  void _setupAnimations() {
+    _pulseController = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    );
+
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _scaleController, curve: Curves.easeInOut),
+    );
+
+    if (widget.isRealTime) {
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _scaleController.dispose();
+    super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails details) {
+    _scaleController.forward();
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    _scaleController.reverse();
+    widget.onTap?.call();
+  }
+
+  void _onTapCancel() {
+    _scaleController.reverse();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isSmallScreen = screenWidth < 360 || screenHeight < 640;
+    final isVerySmallScreen = screenWidth < 320;
+    
+    // Adaptive sizing
+    final cardPadding = isVerySmallScreen ? 12.0 : isSmallScreen ? 14.0 : 16.0;
+    final titleFontSize = isVerySmallScreen ? 10.0 : isSmallScreen ? 11.0 : 12.0;
+    final valueFontSize = isVerySmallScreen ? 18.0 : isSmallScreen ? 20.0 : 22.0;
+    final subtitleFontSize = isVerySmallScreen ? 8.0 : isSmallScreen ? 9.0 : 10.0;
+    final iconSize = isVerySmallScreen ? 16.0 : isSmallScreen ? 18.0 : 20.0;
+    final iconPadding = isVerySmallScreen ? 6.0 : isSmallScreen ? 7.0 : 8.0;
+    final indicatorSize = isVerySmallScreen ? 3.0 : 4.0;
+    final spacing = isVerySmallScreen ? 8.0 : isSmallScreen ? 10.0 : 12.0;
+    
+    return GestureDetector(
+      onTapDown: _onTapDown,
+      onTapUp: _onTapUp,
+      onTapCancel: _onTapCancel,
+      child: AnimatedBuilder(
+        animation: _scaleAnimation,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: _scaleAnimation.value,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF1E1E1E).withOpacity(0.9),
+                    const Color(0xFF2A2A2A).withOpacity(0.8),
+                  ],
                 ),
-                child: Icon(icon, color: iconColor, size: 32),
+                borderRadius: BorderRadius.circular(isVerySmallScreen ? 12 : 16),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.1),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 4),
+                  ),
+                  BoxShadow(
+                    color: widget.iconColor.withOpacity(0.1),
+                    blurRadius: 20,
+                    spreadRadius: 1,
+                  ),
+                ],
               ),
-              const SizedBox(width: 16),
-              Expanded(
+              child: Padding(
+                padding: EdgeInsets.all(cardPadding),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.title,
+                                style: TextStyle(
+                                  color: Colors.grey[400],
+                                  fontSize: titleFontSize,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (widget.isRealTime) ...[
+                                SizedBox(height: spacing / 6),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    AnimatedBuilder(
+                                      animation: _pulseAnimation,
+                                      builder: (context, child) {
+                                        return Transform.scale(
+                                          scale: _pulseAnimation.value,
+                                          child: Container(
+                                            width: indicatorSize,
+                                            height: indicatorSize,
+                                            decoration: BoxDecoration(
+                                              color: Colors.green[400],
+                                              shape: BoxShape.circle,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.green[400]!.withOpacity(0.5),
+                                                  blurRadius: 2,
+                                                  spreadRadius: 1,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    SizedBox(width: spacing / 3),
+                                    Text(
+                                      'LIVE',
+                                      style: TextStyle(
+                                        color: Colors.green[400],
+                                        fontSize: subtitleFontSize - 1,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                        if (isRealTime) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              'LIVE',
-                              style: TextStyle(
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
-                              ),
+                        Container(
+                          padding: EdgeInsets.all(iconPadding),
+                          decoration: BoxDecoration(
+                            color: widget.iconColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(isVerySmallScreen ? 6 : 8),
+                            border: Border.all(
+                              color: widget.iconColor.withOpacity(0.3),
+                              width: 1,
                             ),
                           ),
-                        ],
+                          child: Icon(
+                            widget.icon,
+                            color: widget.iconColor,
+                            size: iconSize,
+                          ),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: spacing),
                     Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
+                      widget.value,
                       style: TextStyle(
-                        color: Colors.grey[400],
-                        fontSize: 12,
+                        fontSize: valueFontSize,
+                        fontWeight: FontWeight.bold,
+                        color: widget.iconColor,
+                        fontFamily: 'monospace',
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    SizedBox(height: spacing / 6),
+                    Text(
+                      widget.subtitle,
+                      style: TextStyle(
+                        color: Colors.grey[500],
+                        fontSize: subtitleFontSize,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

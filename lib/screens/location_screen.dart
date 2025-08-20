@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'dart:async';
+import 'package:geolocator/geolocator.dart';
 import '../services/location_service.dart';
-import '../widgets/permission_status_widget.dart';
+import '../services/wake_lock_service.dart';
 
 class LocationScreen extends StatefulWidget {
   const LocationScreen({super.key});
@@ -12,159 +13,179 @@ class LocationScreen extends StatefulWidget {
 
 class _LocationScreenState extends State<LocationScreen> {
   final _locationService = LocationService();
-  PermissionStatus _permissionStatus = PermissionStatus.denied;
-  bool _isLoading = false;
+  final _wakeLockService = WakeLockService();
+
+  Position? _currentPosition;
+  String _errorMessage = '';
+  bool _isLoading = true;
+  StreamSubscription<Position>? _positionStream;
 
   @override
   void initState() {
     super.initState();
-    _checkPermissionStatus();
+    _initializeLocationTracking();
   }
 
-  Future<void> _checkPermissionStatus() async {
-    setState(() => _isLoading = true);
-    
+  @override
+  void dispose() {
+    _positionStream?.cancel();
+    _wakeLockService.disableWakeLock();
+    super.dispose();
+  }
+
+  Future<void> _initializeLocationTracking() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
     try {
-      final status = await Permission.location.status;
+      // Enable wake lock to keep the screen on during tracking
+      await _wakeLockService.enableWakeLock();
+
+      // The start tracking method now handles permission checks internally.
+      _locationService.startHighPrecisionTracking(
+        onLocationUpdate: (position) {
+          if (mounted) {
+            setState(() {
+              _currentPosition = position;
+              _isLoading = false;
+            });
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            setState(() {
+              _errorMessage = error;
+              _isLoading = false;
+            });
+          }
+        },
+      );
+    } catch (e) {
       if (mounted) {
         setState(() {
-          _permissionStatus = status;
+          // Catch errors from permission requests (e.g., user denies)
+          _errorMessage = e.toString().replaceAll("Exception: ", "");
           _isLoading = false;
         });
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
     }
-  }
-
-  Future<void> _requestPermission() async {
-    try {
-      final status = await _locationService.requestLocationPermission();
-      if (mounted) {
-        setState(() => _permissionStatus = status);
-
-        if (status.isPermanentlyDenied) {
-          _showPermissionDialog();
-        } else if (status.isGranted) {
-          _showSuccessSnackBar();
-        }
-      }
-    } catch (e) {
-      // Handle error silently
-    }
-  }
-
-  void _showPermissionDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Location Permission Required'),
-        content: const Text(
-          'This app needs location permission to function properly. '
-          'Please enable location permission in Settings.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              openAppSettings();
-            },
-            child: const Text('Open Settings'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSuccessSnackBar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Location permission granted!'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Location Permission'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _checkPermissionStatus,
-            tooltip: 'Refresh Status',
-          ),
-        ],
+        title: const Text('Live Location Tracker'),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
+      body: Center(
+        child: _buildBody(),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text('Acquiring GPS signal...'),
+        ],
+      );
+    }
+
+    if (_errorMessage.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.location_off, color: Colors.red, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              'Location Error',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              onPressed: _initializeLocationTracking, // Retry the whole process
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_currentPosition == null) {
+      return const Text('Waiting for location data...');
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Icon(Icons.gps_fixed, color: Colors.green, size: 48),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Status Card
-                  PermissionStatusWidget(
-                    status: _permissionStatus,
-                    title: 'Location Permission',
-                    description: 'Grant location permission to enable precise location features and improved app functionality.',
-                    onRequest: _requestPermission,
+                  Text(
+                    'Current Position',
+                    style: Theme.of(context).textTheme.headlineSmall,
                   ),
-                  const SizedBox(height: 30),
-
-                  // Open Settings Button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: openAppSettings,
-                      icon: const Icon(Icons.settings),
-                      label: const Text('Open App Settings'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey[700],
-                        textStyle: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 30),
-
-                  // Information Card
-                  Card(
-                    color: Colors.blue[900],
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline, color: Colors.lightBlueAccent),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Grant location permission to enable precise location features and improved app functionality.',
-                              style: TextStyle(
-                                color: Colors.lightBlueAccent[100],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  const SizedBox(height: 16),
+                  Text('Latitude: ${_currentPosition!.latitude.toStringAsFixed(6)}'),
+                  const SizedBox(height: 8),
+                  Text('Longitude: ${_currentPosition!.longitude.toStringAsFixed(6)}'),
+                  const SizedBox(height: 8),
+                  Text('Accuracy: ±${_currentPosition!.accuracy.toStringAsFixed(1)} meters'),
+                  const SizedBox(height: 8),
+                  Text('Speed: ${(_currentPosition!.speed * 3.6).toStringAsFixed(1)} km/h'),
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.refresh),
+            label: const Text('Force Refresh'),
+            onPressed: () async {
+              try {
+                final position = await _locationService.forceLocationRefresh();
+                if (mounted) {
+                  setState(() {
+                    _currentPosition = position;
+                  });
+                   ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Location refreshed!'), backgroundColor: Colors.green),
+                  );
+                }
+              } catch (e) {
+                 if (mounted) {
+                   ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+                  );
+                 }
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 }

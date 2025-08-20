@@ -1,44 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:project_nexusv2/services/background_service.dart';
-import 'package:project_nexusv2/services/permission_service.dart';
-import 'screens/permission_screen.dart';
+import 'dart:async';
+import 'dart:math' as math;
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/permission_screen.dart';
+import 'services/permission_service.dart';
+import 'services/background_service.dart';
+import 'services/wake_lock_service.dart';
 import 'utils/constants.dart';
 
-Future<void> main() async {
-  try {
-    WidgetsFlutterBinding.ensureInitialized();
-    print('Main: Flutter initialized');
-    
-    // This is intentionally not awaited to avoid blocking the UI thread.
-    // Any errors during background service initialization will be handled
-    // within the function itself and will not crash the app.
-    _initializeBackgroundServiceAsync();
-    
-    print('Main: Starting app...');
-    runApp(const MyApp());
-  } catch (e, stackTrace) {
-    print('Main: Error in main: $e');
-    print('Main: Stack trace: $stackTrace');
-    // Still try to run the app
-    runApp(const MyApp());
-  }
-}
+void main() async {
+  // Ensure Flutter bindings are initialized before any async operations.
+  WidgetsFlutterBinding.ensureInitialized();
 
-// Initialize background service asynchronously without blocking app startup
-void _initializeBackgroundServiceAsync() {
-  Future.delayed(const Duration(milliseconds: 500), () async {
-    try {
-      print('Main: Initializing background service asynchronously...');
-      await initializeService();
-      print('Main: Background service initialization completed');
-    } catch (e) {
-      print('Main: Background service initialization failed: $e');
-      // App continues normally even if background service fails
-    }
-  });
+  bool servicesInitialized = false;
+  try {
+    // Initialize critical services that must run before the app starts.
+    await initializeService();
+    await WakeLockService().initialize();
+    servicesInitialized = true;
+    print("main: All essential services initialized successfully.");
+  } catch (e) {
+    print("main: CRITICAL ERROR - Failed to initialize background services: $e");
+    // If services fail, the app will show an error screen.
+  }
+
+  // Only run the main app if initialization was successful.
+  if (servicesInitialized) {
+    runApp(const MyApp());
+  } else {
+    runApp(const InitializationErrorApp());
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -46,250 +39,275 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print('MyApp: Building MaterialApp');
-    
     return MaterialApp(
-      title: AppConstants.appTitle,
+      title: 'PNP Device Monitor',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        primaryColor: AppColors.tealAccent,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primaryColor: AppColors.primaryRed,
         scaffoldBackgroundColor: AppColors.darkBackground,
         cardColor: AppColors.cardBackground,
-        colorScheme: const ColorScheme.dark().copyWith(
+        colorScheme: ColorScheme.dark(
+          primary: AppColors.primaryRed,
           secondary: AppColors.tealAccent,
-          primary: AppColors.tealAccent,
+          surface: AppColors.surfaceColor,
+          background: AppColors.darkBackground,
+        ),
+        textTheme: const TextTheme(
+          bodyLarge: TextStyle(color: AppColors.primaryText),
+          bodyMedium: TextStyle(color: AppColors.secondaryText),
+          titleLarge: TextStyle(color: AppColors.primaryText),
+        ),
+        appBarTheme: AppBarTheme(
+          backgroundColor: AppColors.cardBackground,
+          elevation: 0,
+          titleTextStyle: AppTextStyles.h4,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primaryRed,
+            foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppBorders.small,
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSettings.defaultPadding,
+              vertical: 12,
             ),
           ),
         ),
         cardTheme: CardThemeData(
+          color: AppColors.cardBackground,
+          elevation: 4,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: AppBorders.mediumRadius,
           ),
         ),
       ),
-      home: const StartupScreen(),
+      home: const AuthCheck(),
     );
   }
 }
 
-class StartupScreen extends StatefulWidget {
-  const StartupScreen({super.key});
+// A simple, clean widget to display if core services fail to start.
+class InitializationErrorApp extends StatelessWidget {
+  const InitializationErrorApp({super.key});
 
   @override
-  State<StartupScreen> createState() => _StartupScreenState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(),
+      home: Scaffold(
+        backgroundColor: AppColors.darkBackground,
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: AppColors.primaryGradient,
+            ),
+          ),
+          child: const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: AppColors.errorColor,
+                    size: 64,
+                  ),
+                  SizedBox(height: 24),
+                  Text(
+                    'Critical System Error',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'A critical error occurred while starting the application. Please close and restart the app.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white70,
+                    ),
+                  ),
+                  SizedBox(height: 24),
+                  Text(
+                    'If this problem persists, contact your system administrator.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _StartupScreenState extends State<StartupScreen> {
+// This widget checks for permissions and authentication status to direct the user to the correct screen.
+class AuthCheck extends StatefulWidget {
+  const AuthCheck({super.key});
+
+  @override
+  State<AuthCheck> createState() => _AuthCheckState();
+}
+
+class _AuthCheckState extends State<AuthCheck> {
   final _permissionService = PermissionService();
+  late Future<Widget> _initialScreenFuture;
 
   @override
   void initState() {
     super.initState();
-    _checkStartupConditions();
+    _initialScreenFuture = _determineInitialScreen();
   }
 
-  Future<void> _checkStartupConditions() async {
+  Future<Widget> _determineInitialScreen() async {
     try {
-      print('StartupScreen: Checking startup conditions...');
+      print("AuthCheck: Starting initial screen determination...");
       
-      // Add a small delay to show the splash screen briefly
-      await Future.delayed(const Duration(milliseconds: 1500));
-      
+      // First check critical permissions
+      final criticalPermissionsGranted = await _checkCriticalPermissions();
+      if (!criticalPermissionsGranted) {
+        print("AuthCheck: Critical permissions not granted. Navigating to PermissionScreen.");
+        return const PermissionScreen();
+      }
+
       // Check for stored credentials
       final prefs = await SharedPreferences.getInstance();
-      final storedToken = prefs.getString('token');
-      final storedDeploymentCode = prefs.getString('deploymentCode');
-      
-      if (storedToken != null && storedDeploymentCode != null) {
-        print('StartupScreen: Found stored credentials, checking permissions...');
+      final token = prefs.getString('token');
+      final deploymentCode = prefs.getString('deploymentCode');
+
+      print("AuthCheck: Checking stored credentials...");
+      print("AuthCheck: Token exists: ${token != null}");
+      print("AuthCheck: Deployment code exists: ${deploymentCode != null}");
+
+      if (token != null && token.isNotEmpty && deploymentCode != null && deploymentCode.isNotEmpty) {
+        print("AuthCheck: Valid credentials found. Navigating to DashboardScreen.");
+        print("AuthCheck: Token preview: ${token.substring(0, math.min(10, token.length))}...");
         
-        // Check if critical permissions are still granted
-        final hasPermissions = await _permissionService.hasAllCriticalPermissions();
-        
-        if (hasPermissions) {
-          print('StartupScreen: Permissions valid, navigating to dashboard...');
-          
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => DashboardScreen(
-                  token: storedToken,
-                  deploymentCode: storedDeploymentCode,
-                ),
-              ),
-            );
-          }
-          return;
+        // Validate that the credentials are actually usable
+        if (_validateCredentials(token, deploymentCode)) {
+          return DashboardScreen(token: token, deploymentCode: deploymentCode);
         } else {
-          print('StartupScreen: Critical permissions missing, going to login...');
-          
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const LoginScreen()),
-            );
-          }
-          return;
+          print("AuthCheck: Stored credentials are invalid. Clearing and going to login.");
+          await _clearInvalidCredentials(prefs);
+          return const LoginScreen();
         }
       } else {
-        print('StartupScreen: No stored credentials, checking permissions...');
-        
-        // No stored credentials, check if permissions are granted
-        final hasPermissions = await _permissionService.hasAllCriticalPermissions();
-        
-        if (hasPermissions) {
-          print('StartupScreen: Permissions granted, going to login...');
-          
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const LoginScreen()),
-            );
-          }
-        } else {
-          print('StartupScreen: Permissions needed, going to permission screen...');
-          
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const PermissionScreen()),
-            );
-          }
-        }
+        print("AuthCheck: No valid stored credentials found. Navigating to LoginScreen.");
+        return const LoginScreen();
       }
     } catch (e) {
-      print('StartupScreen: Error checking startup conditions: $e');
-      
-      // On error, default to permission screen
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const PermissionScreen()),
-        );
-      }
+      print("AuthCheck: Error determining initial screen: $e");
+      // Fallback to login screen in case of an unexpected error
+      return const LoginScreen();
+    }
+  }
+
+  bool _validateCredentials(String token, String deploymentCode) {
+    // Basic validation - ensure they're not empty and have reasonable length
+    if (token.length < 10 || deploymentCode.length < 3) {
+      return false;
+    }
+    
+    // You can add more sophisticated validation here
+    // For example, check token format, expiration, etc.
+    
+    return true;
+  }
+
+  Future<void> _clearInvalidCredentials(SharedPreferences prefs) async {
+    try {
+      await prefs.remove('token');
+      await prefs.remove('deploymentCode');
+      print("AuthCheck: Invalid credentials cleared.");
+    } catch (e) {
+      print("AuthCheck: Error clearing invalid credentials: $e");
+    }
+  }
+
+  Future<bool> _checkCriticalPermissions() async {
+    try {
+      final permissions = await _permissionService.checkAllPermissions();
+      final allGranted = (permissions['location'] ?? false) &&
+                         (permissions['notification'] ?? false) &&
+                         (permissions['ignoreBatteryOptimizations'] ?? false);
+      print("AuthCheck: Critical permission status - allGranted: $allGranted");
+      print("AuthCheck: Location: ${permissions['location']}");
+      print("AuthCheck: Notification: ${permissions['notification']}");
+      print("AuthCheck: Battery Optimization: ${permissions['ignoreBatteryOptimizations']}");
+      return allGranted;
+    } catch (e) {
+      print("AuthCheck: Error checking critical permissions: $e");
+      return false;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              AppColors.darkBackground,
-              AppColors.primaryRed.withOpacity(0.1),
-            ],
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Logo
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryRed.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.primaryRed.withOpacity(0.3)),
+    return FutureBuilder<Widget>(
+      future: _initialScreenFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            backgroundColor: AppColors.darkBackground,
+            body: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: AppColors.primaryGradient,
                 ),
-                child: Image.asset(
-                  'assets/images/pnp_logo.png',
-                  width: 120,
-                  height: 120,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryRed.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(60),
+              ),
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: AppColors.tealAccent),
+                    SizedBox(height: 24),
+                    Text(
+                      'Initializing Security Systems...',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
-                      child: const Icon(
-                        Icons.shield,
-                        size: 60,
-                        color: AppColors.primaryRed,
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Checking credentials and permissions...',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
               ),
-              
-              const SizedBox(height: 32),
-              
-              // App title
-              Text(
-                AppConstants.appTitle.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primaryRed,
-                  letterSpacing: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              
-              const SizedBox(height: 12),
-              
-              // App motto
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryGreen,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  AppConstants.appMotto,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 0.8,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              
-              const SizedBox(height: 48),
-              
-              // Loading indicator
-              const CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.tealAccent),
-              ),
-              
-              const SizedBox(height: 16),
-              
-              Text(
-                'Initializing Security Module...',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[400],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              
-              const SizedBox(height: 8),
-              
-              Text(
-                'Checking credentials and permissions',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          print("AuthCheck: FutureBuilder error: ${snapshot.error}");
+          return const LoginScreen(); // Fallback on error
+        }
+
+        return snapshot.data ?? const LoginScreen(); // Default to LoginScreen if data is null
+      },
     );
   }
 }

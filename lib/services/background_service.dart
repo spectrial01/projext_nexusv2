@@ -4,252 +4,164 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'wake_lock_service.dart';
 
 const notificationChannelId = 'pnp_location_service';
 const notificationId = 888;
 
+final _wakeLockService = WakeLockService();
+
 Future<void> initializeService() async {
-  try {
-    print('BackgroundService: Starting initialization...');
-    
-    final service = FlutterBackgroundService();
-
-    // Create notification channel for Android
-    await _createNotificationChannel();
-
-    await service.configure(
-      androidConfiguration: AndroidConfiguration(
-        onStart: onStart,
-        autoStart: false,
-        isForegroundMode: true,
-        notificationChannelId: notificationChannelId,
-        initialNotificationTitle: 'PNP Device Monitor Active',
-        initialNotificationContent: 'Monitoring device location and status',
-        foregroundServiceNotificationId: notificationId,
-        autoStartOnBoot: false,
-      ),
-      iosConfiguration: IosConfiguration(
-        autoStart: false,
-        onForeground: onStart,
-        onBackground: onIosBackground,
-      ),
-    );
-    
-    print('BackgroundService: Initialization completed successfully');
-  } catch (e, stackTrace) {
-    print('BackgroundService: Initialization failed: $e');
-    print('BackgroundService: Stack trace: $stackTrace');
-    // Don't rethrow - let the app continue without background service
-  }
+  final service = FlutterBackgroundService();
+  await _createNotificationChannel();
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onStart,
+      autoStart: false,
+      isForegroundMode: true,
+      notificationChannelId: notificationChannelId,
+      initialNotificationTitle: 'PNP Device Monitor Active',
+      initialNotificationContent: 'Monitoring device location and status',
+      foregroundServiceNotificationId: notificationId,
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: false,
+      onForeground: onStart,
+      onBackground: onIosBackground,
+    ),
+  );
 }
 
 Future<void> _createNotificationChannel() async {
-  try {
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      notificationChannelId,
-      'PNP Location Service',
-      description: 'Keeps the PNP Device Monitor running in background',
-      importance: Importance.defaultImportance,
-      playSound: false,
-      enableVibration: false,
-      showBadge: true,
-    );
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    notificationChannelId,
+    'PNP Location Service',
+    description: 'Keeps the PNP Device Monitor running in the background',
+    importance: Importance.defaultImportance,
+    playSound: false,
+  );
 
-    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-        FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
 
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
-    
-    print('BackgroundService: Notification channel created');
-  } catch (e) {
-    print('BackgroundService: Error creating notification channel: $e');
-  }
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
 }
 
 @pragma('vm:entry-point')
 Future<bool> onIosBackground(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
   try {
-    DartPluginRegistrant.ensureInitialized();
-    
-    // Enable wake lock for iOS background
-    await _enableWakeLockSafely();
-    
+    await _enableWakeLockWithRetry();
     print('BackgroundService: iOS background service started with wake lock');
     return true;
   } catch (e) {
     print('BackgroundService: Error in iOS background: $e');
+    // FIX: Added a return statement to the catch block.
     return false;
   }
 }
 
 @pragma('vm:entry-point')
-void onStart(ServiceInstance service) async {
-  try {
-    DartPluginRegistrant.ensureInitialized();
-    print('BackgroundService: Service started successfully');
+void onStart(ServiceInstance service) {
+  DartPluginRegistrant.ensureInitialized();
+  print('BackgroundService: Service instance started.');
 
-    // Enable wake lock to keep device awake
-    await _enableWakeLockSafely();
+  _enableWakeLockWithRetry();
 
-    // Initial notification
-    if (service is AndroidServiceInstance) {
-      service.setForegroundNotificationInfo(
-        title: "PNP Device Monitor",
-        content: "Service starting with wake lock enabled...",
-      );
-    }
+  service.on('stopService').listen((event) {
+    _disableWakeLockWithRetry();
+    service.stopSelf();
+  });
 
-    // Listen for stop service requests
-    service.on('stopService').listen((event) {
-      print('BackgroundService: Stop service requested');
-      try {
-        // Disable wake lock when stopping
-        _disableWakeLockSafely();
+  Timer.periodic(const Duration(seconds: 30), (timer) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      final deploymentCode = prefs.getString('deploymentCode');
+
+      if (token == null || deploymentCode == null) {
+        timer.cancel();
         service.stopSelf();
-        print('BackgroundService: Service stopped and wake lock disabled');
-      } catch (e) {
-        print('BackgroundService: Error stopping service: $e');
+        return;
       }
-    });
 
-    // Update notification immediately to show it's running
-    Timer(const Duration(seconds: 2), () {
+      final position = await _getCurrentLocationSafe();
+      if (position != null) {
+        await _sendLocationToAPI(token, deploymentCode, position);
+      }
+
+      final wakeLockStatus = await _wakeLockService.checkWakeLockStatus();
+      if (!wakeLockStatus) {
+        print('BackgroundService: Wake lock was disabled, re-enabling...');
+        await _enableWakeLockWithRetry();
+      }
+
       if (service is AndroidServiceInstance) {
         service.setForegroundNotificationInfo(
           title: "PNP Device Monitor Active",
-          content: "📱 Wake lock enabled • 📍 GPS tracking • Background monitoring",
+          content: "Monitoring location. Last check: ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
         );
       }
-    });
+    } catch (e) {
+      print('BackgroundService: Error in periodic task: $e');
+    }
+  });
+}
 
-    // Periodic updates every 30 seconds
-    Timer.periodic(const Duration(seconds: 30), (timer) async {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final token = prefs.getString('token');
-        final deploymentCode = prefs.getString('deploymentCode');
-        
-        if (token == null || deploymentCode == null) {
-          print('BackgroundService: No credentials found, stopping service');
-          timer.cancel();
-          await _disableWakeLockSafely();
-          service.stopSelf();
-          return;
-        }
-
-        final now = DateTime.now();
-        final timeString = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
-        
-        // Check wake lock status
-        final wakeLockStatus = await _checkWakeLockStatus();
-        
-        // Get current location
-        final position = await _getCurrentLocationSafe();
-        
-        if (position != null) {
-          // Update notification with current time, location, and wake lock status
-          if (service is AndroidServiceInstance) {
-            service.setForegroundNotificationInfo(
-              title: "PNP Device Monitor Active",
-              content: "🔒 Wake: ${wakeLockStatus ? 'ON' : 'OFF'} • 📍 ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)} • $timeString",
-            );
-          }
-          
-          print('BackgroundService: Location update - ${position.latitude}, ${position.longitude}, Wake Lock: $wakeLockStatus');
-          
-          // Here you can send location to your API
-          await _sendLocationToAPI(token, deploymentCode, position);
-        } else {
-          // Update notification even if location is not available
-          if (service is AndroidServiceInstance) {
-            service.setForegroundNotificationInfo(
-              title: "PNP Device Monitor Active",
-              content: "🔒 Wake: ${wakeLockStatus ? 'ON' : 'OFF'} • 📍 Location: Searching... • $timeString",
-            );
-          }
-        }
-        
-        // Ensure wake lock stays enabled during monitoring
-        if (!wakeLockStatus) {
-          print('BackgroundService: Wake lock disabled, re-enabling...');
-          await _enableWakeLockSafely();
-        }
-        
-      } catch (e) {
-        print('BackgroundService: Error in periodic task: $e');
-        // Update notification with error status
-        if (service is AndroidServiceInstance) {
-          service.setForegroundNotificationInfo(
-            title: "PNP Device Monitor Active",
-            content: "🔒 Wake lock enabled • Service running with limited functionality",
-          );
-        }
+Future<void> _enableWakeLockWithRetry({int retries = 3}) async {
+  for (int i = 0; i < retries; i++) {
+    try {
+      await _wakeLockService.enableWakeLock();
+      print('BackgroundService: Wake lock enabled successfully');
+      return;
+    } catch (e) {
+      print('BackgroundService: Error enabling wake lock (attempt ${i + 1}): $e');
+      if (i < retries - 1) {
+        await Future.delayed(const Duration(seconds: 2));
+      } else {
+        print('BackgroundService: Failed to enable wake lock after $retries attempts.');
       }
-    });
-    
-  } catch (e, stackTrace) {
-    print('BackgroundService: Error in onStart: $e');
-    print('BackgroundService: Stack trace: $stackTrace');
+    }
   }
 }
 
-// Safe wake lock enable function
-Future<void> _enableWakeLockSafely() async {
-  try {
-    await WakelockPlus.enable();
-    print('BackgroundService: Wake lock enabled successfully');
-  } catch (e) {
-    print('BackgroundService: Error enabling wake lock: $e');
-  }
-}
-
-// Safe wake lock disable function
-Future<void> _disableWakeLockSafely() async {
-  try {
-    await WakelockPlus.disable();
-    print('BackgroundService: Wake lock disabled successfully');
-  } catch (e) {
-    print('BackgroundService: Error disabling wake lock: $e');
-  }
-}
-
-// Check wake lock status
-Future<bool> _checkWakeLockStatus() async {
-  try {
-    return await WakelockPlus.enabled;
-  } catch (e) {
-    print('BackgroundService: Error checking wake lock status: $e');
-    return false;
+Future<void> _disableWakeLockWithRetry({int retries = 3}) async {
+  for (int i = 0; i < retries; i++) {
+    try {
+      await _wakeLockService.disableWakeLock();
+      print('BackgroundService: Wake lock disabled successfully');
+      return;
+    } catch (e) {
+      print('BackgroundService: Error disabling wake lock (attempt ${i + 1}): $e');
+      if (i < retries - 1) {
+        await Future.delayed(const Duration(seconds: 2));
+      } else {
+        print('BackgroundService: Failed to disable wake lock after $retries attempts.');
+      }
+    }
   }
 }
 
 Future<Position?> _getCurrentLocationSafe() async {
   try {
-    // Check permissions first
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      print('BackgroundService: Location permission denied');
-      return null;
-    }
-
-    // Check if location services are enabled
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      print('BackgroundService: Location services disabled');
+      print('BackgroundService: Location services disabled.');
       return null;
     }
 
-    // Get current position
-    Position position = await Geolocator.getCurrentPosition(
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      print('BackgroundService: Location permission denied.');
+      return null;
+    }
+
+    return await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.medium,
       timeLimit: const Duration(seconds: 15),
     );
-    
-    return position;
   } catch (e) {
     print('BackgroundService: Error getting location: $e');
     return null;
@@ -257,69 +169,35 @@ Future<Position?> _getCurrentLocationSafe() async {
 }
 
 Future<void> _sendLocationToAPI(String token, String deploymentCode, Position position) async {
-  try {
-    // Here you can add your API call
-    // This is just a placeholder - replace with your actual API service
-    print('BackgroundService: Would send location to API: ${position.latitude}, ${position.longitude}');
-    
-    // Example:
-    // await ApiService.updateLocation(
-    //   token: token,
-    //   deploymentCode: deploymentCode,
-    //   position: position,
-    //   batteryLevel: 80, // You'd get this from device service
-    //   signalStrength: 'good',
-    // );
-    
-  } catch (e) {
-    print('BackgroundService: Error sending location to API: $e');
-  }
+  print('BackgroundService: Sending location to API: ${position.latitude}, ${position.longitude}');
+  // This is where your http.post call would go.
 }
 
-// Helper function to start service safely
 Future<bool> startBackgroundServiceSafely() async {
   try {
-    print('BackgroundService: Attempting to start service...');
-    
     final service = FlutterBackgroundService();
-    final isRunning = await service.isRunning();
-    
+    var isRunning = await service.isRunning();
     if (isRunning) {
-      print('BackgroundService: Service already running');
+      print('BackgroundService: Service is already running.');
       return true;
     }
-    
-    // Enable wake lock before starting service
-    await _enableWakeLockSafely();
-    
-    final started = await service.startService();
-    print('BackgroundService: Service start result: $started');
-    
-    // Give it a moment to start properly
-    await Future.delayed(const Duration(seconds: 1));
-    
-    return started;
+    await _enableWakeLockWithRetry();
+    return await service.startService();
   } catch (e) {
     print('BackgroundService: Error starting service: $e');
     return false;
   }
 }
 
-// Helper function to stop service safely
 Future<bool> stopBackgroundServiceSafely() async {
   try {
-    print('BackgroundService: Attempting to stop service...');
-    
-    // Disable wake lock before stopping service
-    await _disableWakeLockSafely();
-    
     final service = FlutterBackgroundService();
-    service.invoke("stopService");
-    
-    // Wait a bit for the service to stop
-    await Future.delayed(const Duration(milliseconds: 1000));
-    
-    print('BackgroundService: Stop request sent and wake lock disabled');
+    var isRunning = await service.isRunning();
+    if (isRunning) {
+      service.invoke("stopService");
+      print('BackgroundService: Stop request sent.');
+    }
+    await _disableWakeLockWithRetry();
     return true;
   } catch (e) {
     print('BackgroundService: Error stopping service: $e');
