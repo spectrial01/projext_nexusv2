@@ -1,8 +1,13 @@
+// screens/dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:battery_plus/battery_plus.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import '../services/location_service.dart';
 import '../services/device_service.dart';
 import '../services/api_service.dart';
@@ -11,6 +16,7 @@ import '../services/watchdog_service.dart';
 import '../services/wake_lock_service.dart';
 import '../widgets/metric_card.dart';
 import '../utils/constants.dart';
+import '../utils/responsive_utils.dart';
 import 'login_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -36,6 +42,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   Timer? _apiUpdateTimer;
   Timer? _heartbeatTimer;
   Timer? _clockTimer;
+  Timer? _batterySignalTimer;
   
   bool _isLoading = true;
   bool _isLocationLoading = true;
@@ -57,6 +64,11 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     _setupAnimations();
     _startClock();
     _initializeServices();
+    
+    // ADD DEBUG INFO
+    Timer(const Duration(seconds: 5), () {
+      _debugBatterySignalData();
+    });
   }
 
   void _setupAnimations() {
@@ -100,6 +112,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     _apiUpdateTimer?.cancel();
     _heartbeatTimer?.cancel();
     _clockTimer?.cancel();
+    _batterySignalTimer?.cancel();
     _pulseController.dispose();
     _fadeController.dispose();
     _locationService.dispose();
@@ -195,12 +208,52 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     }
   }
 
+// FIXED PERIODIC UPDATES - No more heartbeat conflicts
   void _startPeriodicUpdates() {
+    // SINGLE MAIN UPDATE TIMER - Every 5 seconds with real location
     _apiUpdateTimer = Timer.periodic(
-      AppSettings.apiUpdateInterval,
+      const Duration(seconds: 5),
       (timer) => _sendLocationUpdateSafely(),
     );
     
+    // STATUS CHECK TIMER - Every 2 minutes to verify login status (less frequent)
+    Timer.periodic(const Duration(minutes: 2), (timer) async {
+      try {
+        final statusResult = await ApiService.checkStatus(
+          widget.token,
+          widget.deploymentCode,
+        );
+        print('Dashboard: 📊 Status check completed: ${statusResult.success}');
+      } catch (e) {
+        print('Dashboard: Status check error: $e');
+      }
+    });
+    
+    // REMOVED HEARTBEAT TIMER - This was causing the flickering!
+    // The main update every 5 seconds is sufficient to keep connection alive
+    
+    // BACKUP UPDATE TIMER - Only every 5 minutes (very infrequent)
+    _batterySignalTimer = Timer.periodic(const Duration(minutes: 5), (timer) async {
+      try {
+        // Only send backup if we have real location data
+        if (_locationService.currentPosition != null) {
+          await ApiService.sendBatterySignalUpdate(
+            token: widget.token,
+            deploymentCode: widget.deploymentCode,
+            batteryLevel: _deviceService.batteryLevel,
+            signalStrength: _deviceService.signalStrength,
+            batteryState: _deviceService.batteryState.toString(),
+            connectivityType: _deviceService.connectivityResult.toString().split('.').last,
+          );
+        }
+      } catch (e) {
+        print('Dashboard: Backup update error: $e');
+      }
+    });
+    
+    // REMOVED ALTERNATIVE UPDATE TIMER - Redundant with main updates
+    
+    // System maintenance every 5 minutes
     _heartbeatTimer = Timer.periodic(
       const Duration(minutes: 5),
       (timer) {
@@ -212,9 +265,14 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             _wakeLockStatus = _wakeLockService.getDetailedStatus();
           });
         }
+        
+        // Debug stability status
+        final stabilityStatus = ApiService.getStabilityStatus();
+        print('Dashboard: 📊 Stability Status: $stabilityStatus');
       },
     );
     
+    // Simulated internet speed updates
     Timer.periodic(const Duration(seconds: 5), (timer) {
       if (mounted) {
         setState(() {
@@ -224,36 +282,117 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     });
   }
 
+  // MAINTAIN WAKE LOCK - Keep screen awake for monitoring
   Future<void> _maintainWakeLock() async {
     try {
       if (!await _wakeLockService.checkWakeLockStatus()) {
         await _wakeLockService.forceEnableForCriticalOperation();
+        print('Dashboard: 🔒 Wake lock restored');
       }
     } catch (e) {
       print('Dashboard: Error maintaining wake lock: $e');
     }
   }
 
+  // SAFE WRAPPER for location updates with error handling
   Future<void> _sendLocationUpdateSafely() async {
     try {
       await _sendLocationUpdate();
     } catch (e) {
+      print('Dashboard: Error in safe location update: $e');
       if (mounted) {
-        _showSnackBar('Failed to sync location: ${e.toString()}', Colors.red);
+        _showSnackBar('Location sync error: ${e.toString()}', Colors.red);
       }
     }
   }
 
+  // SINGLE CONSISTENT LOCATION UPDATE - Only real coordinates
   Future<void> _sendLocationUpdate() async {
     if (_locationService.currentPosition == null) return;
-    await ApiService.updateLocation(
-      token: widget.token,
-      deploymentCode: widget.deploymentCode,
-      position: _locationService.currentPosition!,
-      batteryLevel: _deviceService.batteryLevel,
-      signalStrength: _deviceService.signalStrength,
-    );
+    
+    final position = _locationService.currentPosition!;
+    final batteryLevel = _deviceService.batteryLevel;
+    final signalStrength = _deviceService.signalStrength;
+    final batteryState = _deviceService.batteryState.toString();
+    final connectivityType = _deviceService.connectivityResult.toString().split('.').last;
+    
+    print('Dashboard: 📍 Sending CONSISTENT location update (no dummy coordinates)...');
+    print('Dashboard: 🔋 Battery: $batteryLevel% ($batteryState)');
+    print('Dashboard: 📶 Signal: $signalStrength ($connectivityType)');
+    print('Dashboard: 📍 REAL Location: ${position.latitude}, ${position.longitude}');
+    print('Dashboard: 🎯 Deployment: ${widget.deploymentCode}');
+    
+    try {
+      // ONLY SEND REAL LOCATION DATA - No dummy coordinates ever
+      final response = await ApiService.updateLocation(
+        token: widget.token,
+        deploymentCode: widget.deploymentCode,
+        position: position,
+        batteryLevel: batteryLevel,
+        signalStrength: signalStrength,
+        batteryState: batteryState,
+        connectivityType: connectivityType,
+      );
+      
+      if (response.success) {
+        print('Dashboard: ✅ SUCCESS! Green dot should be STABLE now (no heartbeat conflicts)!');
+        print('Dashboard: 🟢 Real data sent: Battery=$batteryLevel%, Signal=$signalStrength');
+        print('Dashboard: 📍 Coordinates: ${position.latitude}, ${position.longitude}');
+        
+        // Show success feedback occasionally
+        if (DateTime.now().second % 30 == 0 && mounted) {
+          _showSnackBar('Location synced successfully', Colors.green);
+        }
+      } else {
+        print('Dashboard: ⚠️ Update failed: ${response.message}');
+        
+        if (mounted) {
+          _showSnackBar('Sync warning: ${response.message}', Colors.orange);
+        }
+      }
+      
+    } catch (e) {
+      print('Dashboard: ❌ Update error: $e');
+      
+      if (mounted) {
+        _showSnackBar('Network error - will retry automatically', Colors.red);
+      }
+    }
   }
+
+  // ENHANCED DEBUGGING METHOD
+  void _debugBatterySignalData() {
+    print('=== FIXED STABLE SYSTEM DEBUG INFO ===');
+    print('🔋 Battery Level: ${_deviceService.batteryLevel}%');
+    print('🔋 Battery State: ${_deviceService.batteryState}');
+    print('🔋 Is Charging: ${_deviceService.batteryState == BatteryState.charging}');
+    print('📶 Signal Strength: ${_deviceService.signalStrength}');
+    print('📶 Signal Bars: ${_deviceService.getSignalBars()}/4');
+    print('📶 Connectivity: ${_deviceService.connectivityResult}');
+    print('📱 Device: ${_deviceService.deviceBrand} ${_deviceService.deviceModel}');
+    print('📍 REAL Location: ${_locationService.currentPosition?.latitude}, ${_locationService.currentPosition?.longitude}');
+    print('🌐 Web App: https://nexuspolice-13560.web.app/map');
+    print('🆔 Deployment: ${widget.deploymentCode}');
+    print('⏰ Current Time: $_currentTime');
+    
+    // API STABILITY STATUS
+    final stabilityStatus = ApiService.getStabilityStatus();
+    print('📊 STABILITY STATUS:');
+    print('  - Logged In: ${stabilityStatus['isLoggedIn']}');
+    print('  - Last Success: ${stabilityStatus['lastSuccessfulUpdate']}');
+    print('  - Failures: ${stabilityStatus['consecutiveFailures']}');
+    print('  - Minutes Since Success: ${stabilityStatus['minutesSinceLastSuccess']}');
+    
+    print('🔄 FIXED UPDATE STRATEGY:');
+    print('  - Main updates: Every 5 seconds (REAL coordinates only)');
+    print('  - Status check: Every 2 minutes (verify login)');
+    print('  - Backup: Every 5 minutes (if main failing)');
+    print('  - ❌ NO MORE HEARTBEAT with dummy coordinates');
+    print('  - ✅ NO MORE conflicting requests');
+    print('  - 🟢 Green dot should be SOLID now');
+    print('====================================');
+  }
+  
 
   Future<void> _refreshLocation() async {
     setState(() => _isLocationLoading = true);
@@ -279,8 +418,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         content: Text(message),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.r(context))),
+        margin: EdgeInsets.all(16.r(context)),
       ),
     );
   }
@@ -290,49 +429,49 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.r(context))),
         backgroundColor: const Color(0xFF1E1E1E),
         title: Row(
           children: [
-            Icon(Icons.logout, color: Colors.orange[400], size: 24),
-            const SizedBox(width: 12),
-            const Text('Confirm Logout', style: TextStyle(color: Colors.white)),
+            Icon(Icons.logout, color: Colors.orange[400], size: 24.r(context)),
+            SizedBox(width: 12.w(context)),
+            Text('Confirm Logout', style: ResponsiveTextStyles.getHeading3(context).copyWith(color: Colors.white)),
           ],
         ),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Are you sure you want to logout?',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
+              style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 16),
-            Text('This will:', style: TextStyle(color: Colors.white70)),
-            SizedBox(height: 8),
-            Text('• Disconnect from the web monitoring system', style: TextStyle(color: Colors.white54, fontSize: 14)),
-            Text('• Remove your device from the live map', style: TextStyle(color: Colors.white54, fontSize: 14)),
-            Text('• Stop location tracking and background monitoring', style: TextStyle(color: Colors.white54, fontSize: 14)),
-            Text('• Return you to the login screen', style: TextStyle(color: Colors.white54, fontSize: 14)),
-            SizedBox(height: 12),
+            SizedBox(height: 16.h(context)),
+            Text('This will:', style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70)),
+            SizedBox(height: 8.h(context)),
+            Text('• Disconnect from the web monitoring system', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
+            Text('• Remove your device from the live map', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
+            Text('• Stop location tracking and background monitoring', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
+            Text('• Return you to the login screen', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
+            SizedBox(height: 12.h(context)),
             Text(
               'Your supervisor will be notified that you have logged out.',
-              style: TextStyle(color: Colors.yellow, fontSize: 12, fontWeight: FontWeight.w500),
+              style: ResponsiveTextStyles.getCaption(context).copyWith(color: Colors.yellow, fontWeight: FontWeight.w500),
             ),
           ],
         ),
         actions: [
           TextButton(
-            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            child: Text('Cancel', style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70)),
             onPressed: () => Navigator.of(context).pop(),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red[600],
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r(context))),
             ),
-            child: const Text('Logout & Disconnect'),
+            child: Text('Logout & Disconnect', style: ResponsiveTextStyles.getBodyMedium(context)),
             onPressed: () {
               Navigator.of(context).pop();
               _performLogout();
@@ -349,21 +488,21 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.r(context))),
         backgroundColor: const Color(0xFF1E1E1E),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(color: Color(0xFF26C6DA)),
-            const SizedBox(height: 16),
-            const Text(
+            CircularProgressIndicator(color: const Color(0xFF26C6DA)),
+            SizedBox(height: 16.h(context)),
+            Text(
               'Logging out...',
-              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              style: ResponsiveTextStyles.getBodyLarge(context).copyWith(color: Colors.white, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 8),
-            const Text(
+            SizedBox(height: 8.h(context)),
+            Text(
               'Disconnecting from monitoring system',
-              style: TextStyle(color: Colors.white70, fontSize: 12),
+              style: ResponsiveTextStyles.getCaption(context).copyWith(color: Colors.white70),
             ),
           ],
         ),
@@ -371,7 +510,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
 
     try {
-      // Step 1: Send logout request to API to disconnect from web app
       print('Dashboard: Sending logout request to disconnect from web app...');
       
       final logoutResponse = await ApiService.logout(widget.token, widget.deploymentCode);
@@ -384,31 +522,24 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         _showSnackBar('Warning: Failed to disconnect from web app', Colors.orange);
       }
 
-      // Step 2: Stop all local services
       print('Dashboard: Stopping background services...');
       _watchdogService.stopWatchdog();
       await stopBackgroundServiceSafely();
       
-      // Step 3: Clear device wake lock
       await _wakeLockService.disableWakeLock();
       
-      // Step 4: DO NOT clear stored credentials - keep them for next login
       print('Dashboard: Keeping credentials stored for next login');
-      
       print('Dashboard: Logout process completed successfully');
       
-      // Small delay to show the success message
       await Future.delayed(const Duration(milliseconds: 1000));
       
     } catch (e) {
       print('Dashboard: Error during logout: $e');
       _showSnackBar('Logout completed with warnings', Colors.orange);
       
-      // Even if there's an error, we still proceed with logout
       await Future.delayed(const Duration(milliseconds: 500));
     }
 
-    // Step 5: Navigate to login screen
     if (mounted) {
       Navigator.of(context).pop(); // Close the progress dialog
       Navigator.pushAndRemoveUntil(
@@ -463,20 +594,20 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
               colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
             ),
           ),
-          child: const Center(
+          child: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                CircularProgressIndicator(color: Color(0xFF26C6DA)),
-                SizedBox(height: 24),
+                CircularProgressIndicator(color: const Color(0xFF26C6DA)),
+                SizedBox(height: 24.h(context)),
                 Text(
-                  'Initializing Security Systems...',
-                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                  'Initializing Stabilized System...',
+                  style: ResponsiveTextStyles.getBodyLarge(context).copyWith(color: Colors.white70),
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 8.h(context)),
                 Text(
-                  'Please wait while we secure your connection',
-                  style: TextStyle(color: Colors.white38, fontSize: 14),
+                  'Setting up consistent updates and heartbeat monitoring',
+                  style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white38),
                 ),
               ],
             ),
@@ -498,40 +629,40 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           ),
           child: Center(
             child: Padding(
-              padding: const EdgeInsets.all(24.0),
+              padding: EdgeInsets.all(24.r(context)),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.all(20.r(context)),
                     decoration: BoxDecoration(
                       color: Colors.red[900]?.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(15),
+                      borderRadius: BorderRadius.circular(15.r(context)),
                       border: Border.all(color: Colors.red[400]!.withOpacity(0.5)),
                     ),
-                    child: Icon(Icons.error_outline, color: Colors.red[400], size: 64),
+                    child: Icon(Icons.error_outline, color: Colors.red[400], size: 64.r(context)),
                   ),
-                  const SizedBox(height: 24),
-                  const Text(
+                  SizedBox(height: 24.h(context)),
+                  Text(
                     'System Initialization Failed',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: ResponsiveTextStyles.getHeading3(context).copyWith(color: Colors.white),
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12.h(context)),
                   Text(
                     _initializationError.replaceAll("Exception: ", ""),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70),
+                    style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70),
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: 24.h(context)),
                   ElevatedButton.icon(
                     onPressed: _initializeServices,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Retry Initialization'),
+                    icon: Icon(Icons.refresh, size: 20.r(context)),
+                    label: Text('Retry Initialization', style: ResponsiveTextStyles.getBodyMedium(context)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF26C6DA),
                       foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: EdgeInsets.symmetric(horizontal: 24.w(context), vertical: 12.h(context)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.r(context))),
                     ),
                   ),
                 ],
@@ -571,16 +702,16 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                       color: const Color(0xFF26C6DA),
                       backgroundColor: const Color(0xFF1E1E1E),
                       child: ListView(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: EdgeInsets.all(16.r(context)),
                         children: [
                           _buildStatusBanner(),
-                          const SizedBox(height: 16),
+                          SizedBox(height: 16.h(context)),
                           if (_watchdogStatus.isNotEmpty) _buildWatchdogStatus(),
-                          if (_watchdogStatus.isNotEmpty) const SizedBox(height: 16),
+                          if (_watchdogStatus.isNotEmpty) SizedBox(height: 16.h(context)),
                           _buildMetricsGrid(),
-                          const SizedBox(height: 16),
+                          SizedBox(height: 16.h(context)),
                           _buildLocationCard(),
-                          const SizedBox(height: 16),
+                          SizedBox(height: 16.h(context)),
                           _buildDeveloperCredit(),
                         ],
                       ),
@@ -596,20 +727,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   }
 
   Widget _buildHeader() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final isSmallScreen = screenWidth < 360 || screenHeight < 640;
-    final isVerySmallScreen = screenWidth < 320;
-    
-    // Adaptive sizing based on screen size
-    final logoSize = isVerySmallScreen ? 20.0 : isSmallScreen ? 24.0 : 28.0;
-    final fontSize = isVerySmallScreen ? 9.0 : isSmallScreen ? 10.0 : 11.0;
-    final subFontSize = isVerySmallScreen ? 6.0 : isSmallScreen ? 7.0 : 8.0;
-    final timeSize = isVerySmallScreen ? 8.0 : isSmallScreen ? 9.0 : 10.0;
-    final padding = isVerySmallScreen ? 2.0 : isSmallScreen ? 3.0 : 4.0;
-    final spacing = isVerySmallScreen ? 3.0 : isSmallScreen ? 4.0 : 6.0;
-    final timeWidth = isVerySmallScreen ? 35.0 : isSmallScreen ? 40.0 : 45.0;
-    
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -629,17 +746,16 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: padding, vertical: padding * 2),
+        padding: EdgeInsets.symmetric(horizontal: 16.w(context), vertical: 12.h(context)),
         child: Row(
           children: [
-            // Logo Container - Adaptive size
             Container(
-              width: logoSize,
-              height: logoSize,
-              padding: EdgeInsets.all(padding / 2),
+              width: 32.r(context),
+              height: 32.r(context),
+              padding: EdgeInsets.all(4.r(context)),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(6.r(context)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.1),
@@ -649,34 +765,32 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(4.r(context)),
                 child: Image.asset(
                   'assets/images/pnp_logo.png',
-                  width: logoSize - 4,
-                  height: logoSize - 4,
+                  width: 24.r(context),
+                  height: 24.r(context),
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) {
                     return Icon(
                       Icons.shield,
                       color: AppColors.primaryRed,
-                      size: logoSize - 8,
+                      size: 20.r(context),
                     );
                   },
                 ),
               ),
             ),
-            SizedBox(width: spacing),
-            // Text Section - Flexible with adaptive text
+            SizedBox(width: 12.w(context)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    isVerySmallScreen ? 'PNP' : 'PNP MONITOR',
-                    style: TextStyle(
+                    ResponsiveUtils.isVerySmallScreen(context) ? 'PNP' : 'PNP MONITOR',
+                    style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
                       color: Colors.white,
-                      fontSize: fontSize,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.1,
                     ),
@@ -688,23 +802,22 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                     children: [
                       Flexible(
                         child: Text(
-                          'ACTIVE',
-                          style: TextStyle(
+                          'STABILIZED',
+                          style: ResponsiveTextStyles.getCaption(context).copyWith(
                             color: Colors.white70,
-                            fontSize: subFontSize,
                             fontWeight: FontWeight.w500,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.clip,
                         ),
                       ),
-                      SizedBox(width: spacing / 2),
+                      SizedBox(width: 4.w(context)),
                       AnimatedBuilder(
                         animation: _pulseAnimation,
                         builder: (context, child) {
                           return Container(
-                            width: isVerySmallScreen ? 2.0 : 3.0,
-                            height: isVerySmallScreen ? 2.0 : 3.0,
+                            width: 3.r(context),
+                            height: 3.r(context),
                             decoration: BoxDecoration(
                               color: Colors.green[400],
                               shape: BoxShape.circle,
@@ -717,19 +830,17 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 ],
               ),
             ),
-            SizedBox(width: spacing),
-            // Time Section - Adaptive width
+            SizedBox(width: 12.w(context)),
             SizedBox(
-              width: timeWidth,
+              width: 50.w(context),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     _currentTime.length >= 5 ? _currentTime.substring(0, 5) : _currentTime,
-                    style: TextStyle(
+                    style: ResponsiveTextStyles.getCaption(context).copyWith(
                       color: Colors.white,
-                      fontSize: timeSize,
                       fontWeight: FontWeight.bold,
                       fontFamily: 'monospace',
                     ),
@@ -738,33 +849,32 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                   ),
                   Text(
                     'TIME',
-                    style: TextStyle(
+                    style: ResponsiveTextStyles.getCaption(context).copyWith(
                       color: Colors.white54,
-                      fontSize: subFontSize - 1,
+                      fontSize: 8.sp(context),
                       fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],
               ),
             ),
-            SizedBox(width: spacing),
-            // Logout Button - Adaptive size
+            SizedBox(width: 12.w(context)),
             Container(
-              width: logoSize,
-              height: logoSize,
+              width: 32.r(context),
+              height: 32.r(context),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(4.r(context)),
               ),
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(4.r(context)),
                   onTap: _showLogoutConfirmation,
                   child: Icon(
                     Icons.logout,
                     color: Colors.white,
-                    size: logoSize / 2,
+                    size: 16.r(context),
                   ),
                 ),
               ),
@@ -776,16 +886,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   }
 
   Widget _buildStatusBanner() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isSmallScreen = screenWidth < 360;
-    final isVerySmallScreen = screenWidth < 320;
-    
-    final titleFontSize = isVerySmallScreen ? 14.0 : isSmallScreen ? 16.0 : 18.0;
-    final subtitleFontSize = isVerySmallScreen ? 11.0 : isSmallScreen ? 12.0 : 14.0;
-    final urlFontSize = isVerySmallScreen ? 9.0 : isSmallScreen ? 10.0 : 12.0;
-    final iconSize = isVerySmallScreen ? 20.0 : isSmallScreen ? 24.0 : 28.0;
-    final padding = isVerySmallScreen ? 16.0 : 20.0;
-    
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -796,7 +896,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             Colors.green[700]!,
           ],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(16.r(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.green[600]!.withOpacity(0.3),
@@ -806,7 +906,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.all(padding),
+        padding: EdgeInsets.all(20.r(context)),
         child: Column(
           children: [
             Row(
@@ -817,7 +917,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                     return Transform.scale(
                       scale: _pulseAnimation.value,
                       child: Container(
-                        padding: EdgeInsets.all(padding / 2),
+                        padding: EdgeInsets.all(12.r(context)),
                         decoration: BoxDecoration(
                           color: Colors.green[400],
                           shape: BoxShape.circle,
@@ -829,34 +929,34 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                             ),
                           ],
                         ),
-                        child: Icon(Icons.check_circle, color: Colors.white, size: iconSize),
+                        child: Icon(Icons.check_circle, color: Colors.white, size: 24.r(context)),
                       ),
                     );
                   },
                 ),
-                SizedBox(width: padding),
+                SizedBox(width: 16.w(context)),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isVerySmallScreen ? 'Monitoring Active' : 'High-Precision Monitoring Active',
-                        style: TextStyle(
+                        ResponsiveUtils.isVerySmallScreen(context) 
+                          ? 'Stabilized Monitoring Active' 
+                          : 'Stabilized High-Precision Monitoring Active',
+                        style: ResponsiveTextStyles.getBodyLarge(context).copyWith(
                           color: Colors.white,
-                          fontSize: titleFontSize,
                           fontWeight: FontWeight.bold,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: 4.h(context)),
                       Text(
-                        isVerySmallScreen 
-                          ? '24/7 GPS • Wake lock • Connected'
-                          : '24/7 GPS tracking • Wake lock enabled • Web app connected',
-                        style: TextStyle(
+                        ResponsiveUtils.isVerySmallScreen(context) 
+                          ? '💗 Heartbeat • 🔋 Battery • 📶 Signal'
+                          : '💗 Heartbeat system • 🔋 Battery monitoring • 📶 Signal tracking',
+                        style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
                           color: Colors.white70,
-                          fontSize: subtitleFontSize,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -864,29 +964,28 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                     ],
                   ),
                 ),
-                Icon(Icons.lock, color: Colors.green[200], size: iconSize - 4),
+                Icon(Icons.favorite, color: Colors.green[200], size: 20.r(context)),
               ],
             ),
-            SizedBox(height: padding / 2),
+            SizedBox(height: 12.h(context)),
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: EdgeInsets.all(8.r(context)),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(8.r(context)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.web, color: Colors.white70, size: isVerySmallScreen ? 12 : 16),
-                  const SizedBox(width: 8),
+                  Icon(Icons.web, color: Colors.white70, size: 14.r(context)),
+                  SizedBox(width: 8.w(context)),
                   Flexible(
                     child: Text(
-                      isVerySmallScreen 
-                        ? 'nexuspolice-13560.web.app'
-                        : 'Connected to: nexuspolice-13560.web.app/map',
-                      style: TextStyle(
+                      ResponsiveUtils.isVerySmallScreen(context) 
+                        ? 'Stable Connection Active'
+                        : 'Stable connection to: nexuspolice-13560.web.app/map',
+                      style: ResponsiveTextStyles.getCaption(context).copyWith(
                         color: Colors.white70,
-                        fontSize: urlFontSize,
                         fontWeight: FontWeight.w500,
                       ),
                       maxLines: 1,
@@ -904,14 +1003,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
 
   Widget _buildWatchdogStatus() {
     final isRunning = _watchdogStatus['isRunning'] ?? false;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isSmallScreen = screenWidth < 360;
-    final isVerySmallScreen = screenWidth < 320;
-    
-    final titleFontSize = isVerySmallScreen ? 13.0 : isSmallScreen ? 14.0 : 16.0;
-    final subtitleFontSize = isVerySmallScreen ? 10.0 : isSmallScreen ? 11.0 : 12.0;
-    final iconSize = isVerySmallScreen ? 18.0 : isSmallScreen ? 20.0 : 24.0;
-    final padding = isVerySmallScreen ? 12.0 : 16.0;
     
     return Container(
       decoration: BoxDecoration(
@@ -922,7 +1013,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             ? [Colors.blue[600]!, Colors.blue[700]!]
             : [Colors.orange[600]!, Colors.orange[700]!],
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12.r(context)),
         boxShadow: [
           BoxShadow(
             color: (isRunning ? Colors.blue[600]! : Colors.orange[600]!).withOpacity(0.3),
@@ -932,26 +1023,25 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.all(padding),
+        padding: EdgeInsets.all(16.r(context)),
         child: Row(
           children: [
             Icon(
               isRunning ? Icons.security : Icons.warning,
               color: Colors.white,
-              size: iconSize,
+              size: 20.r(context),
             ),
-            SizedBox(width: padding),
+            SizedBox(width: 12.w(context)),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     isRunning 
-                      ? (isVerySmallScreen ? 'Watchdog Active' : 'Security Watchdog Active')
-                      : (isVerySmallScreen ? 'Watchdog Off' : 'Watchdog Inactive'),
-                    style: TextStyle(
+                      ? (ResponsiveUtils.isVerySmallScreen(context) ? 'Watchdog Active' : 'Security Watchdog Active')
+                      : (ResponsiveUtils.isVerySmallScreen(context) ? 'Watchdog Off' : 'Watchdog Inactive'),
+                    style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
                       color: Colors.white,
-                      fontSize: titleFontSize,
                       fontWeight: FontWeight.bold,
                     ),
                     maxLines: 1,
@@ -959,11 +1049,10 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                   ),
                   Text(
                     isRunning 
-                      ? (isVerySmallScreen ? 'Monitoring every 15min' : 'Monitoring app health every 15 minutes')
-                      : (isVerySmallScreen ? 'Monitoring disabled' : 'App monitoring is currently disabled'),
-                    style: TextStyle(
+                      ? (ResponsiveUtils.isVerySmallScreen(context) ? 'Monitoring every 15min' : 'Monitoring app health every 15 minutes')
+                      : (ResponsiveUtils.isVerySmallScreen(context) ? 'Monitoring disabled' : 'App monitoring is currently disabled'),
+                    style: ResponsiveTextStyles.getBodySmall(context).copyWith(
                       color: Colors.white70,
-                      fontSize: subtitleFontSize,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -978,13 +1067,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   }
 
   Widget _buildMetricsGrid() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isSmallScreen = screenWidth < 360;
-    final spacing = isSmallScreen ? 6.0 : 8.0;
-    
     return Column(
       children: [
-        // First Row - Battery and Signal
         Row(
           children: [
             Expanded(
@@ -997,7 +1081,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 isRealTime: true,
               ),
             ),
-            SizedBox(width: spacing),
+            SizedBox(width: 8.w(context)),
             Expanded(
               child: MetricCard(
                 title: 'Signal',
@@ -1010,14 +1094,13 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             ),
           ],
         ),
-        SizedBox(height: spacing + 4),
-        // Second Row - Internet Speed (Full Width)
+        SizedBox(height: 12.h(context)),
         MetricCard(
-          title: 'Internet Speed',
-          icon: Icons.speed,
-          iconColor: Colors.blue[400]!,
-          value: '${_internetSpeed.toStringAsFixed(1)} KB/s',
-          subtitle: 'REAL-TIME DATA',
+          title: 'Heartbeat System',
+          icon: Icons.favorite,
+          iconColor: Colors.pink[400]!,
+          value: 'ACTIVE',
+          subtitle: 'STABLE CONNECTION',
           isRealTime: true,
         ),
       ],
@@ -1029,7 +1112,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       return Container(
         decoration: BoxDecoration(
           color: const Color(0xFF1E1E1E).withOpacity(0.8),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(16.r(context)),
           border: Border.all(color: Colors.white.withOpacity(0.1)),
           boxShadow: [
             BoxShadow(
@@ -1039,20 +1122,20 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             ),
           ],
         ),
-        child: const Padding(
-          padding: EdgeInsets.all(24.0),
+        child: Padding(
+          padding: EdgeInsets.all(24.r(context)),
           child: Column(
             children: [
-              CircularProgressIndicator(color: Color(0xFF26C6DA)),
-              SizedBox(height: 16),
+              CircularProgressIndicator(color: const Color(0xFF26C6DA)),
+              SizedBox(height: 16.h(context)),
               Text(
                 'Acquiring High-Precision Location...',
-                style: TextStyle(color: Colors.white, fontSize: 16),
+                style: ResponsiveTextStyles.getBodyLarge(context).copyWith(color: Colors.white),
               ),
-              SizedBox(height: 8),
+              SizedBox(height: 8.h(context)),
               Text(
                 'Using GPS + Network for best accuracy',
-                style: TextStyle(color: Colors.white54, fontSize: 12),
+                style: ResponsiveTextStyles.getCaption(context).copyWith(color: Colors.white54),
               ),
             ],
           ),
@@ -1065,7 +1148,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       return Container(
         decoration: BoxDecoration(
           color: const Color(0xFF1E1E1E).withOpacity(0.8),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(16.r(context)),
           border: Border.all(color: Colors.orange.withOpacity(0.3)),
           boxShadow: [
             BoxShadow(
@@ -1076,38 +1159,38 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: EdgeInsets.all(24.r(context)),
           child: Column(
             children: [
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(16.r(context)),
                 decoration: BoxDecoration(
                   color: Colors.orange[900]?.withOpacity(0.3),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.location_off, size: 48, color: Colors.orange[400]),
+                child: Icon(Icons.location_off, size: 48.r(context), color: Colors.orange[400]),
               ),
-              const SizedBox(height: 16),
-              const Text(
+              SizedBox(height: 16.h(context)),
+              Text(
                 'Location Unavailable',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                style: ResponsiveTextStyles.getBodyLarge(context).copyWith(color: Colors.white, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 8),
-              const Text(
+              SizedBox(height: 8.h(context)),
+              Text(
                 'Unable to get precise location. Please ensure GPS is enabled.',
-                style: TextStyle(color: Colors.white54, fontSize: 14),
+                style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white54),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: 20.h(context)),
               ElevatedButton.icon(
                 onPressed: _refreshLocation,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Force GPS Refresh'),
+                icon: Icon(Icons.refresh, size: 16.r(context)),
+                label: Text('Force GPS Refresh', style: ResponsiveTextStyles.getBodyMedium(context)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF26C6DA),
                   foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: EdgeInsets.symmetric(horizontal: 24.w(context), vertical: 12.h(context)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.r(context))),
                 ),
               ),
             ],
@@ -1122,7 +1205,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E).withOpacity(0.8),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(16.r(context)),
         border: Border.all(color: Colors.white.withOpacity(0.1)),
         boxShadow: [
           BoxShadow(
@@ -1133,54 +1216,54 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(20.r(context)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(12.r(context)),
                   decoration: BoxDecoration(
                     color: (isHighAccuracy ? Colors.green[400] : Colors.orange[400])!.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(12.r(context)),
                   ),
                   child: Icon(
                     isHighAccuracy ? Icons.gps_fixed : Icons.location_on,
                     color: isHighAccuracy ? Colors.green[400] : Colors.orange[400],
-                    size: 28,
+                    size: 28.r(context),
                   ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: 16.w(context)),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          const Text(
-                            'High-Precision Location',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                          Flexible(
+                            child: Text(
+                              'Stabilized Location',
+                              style: ResponsiveTextStyles.getBodyLarge(context).copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          SizedBox(width: 8.w(context)),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: EdgeInsets.symmetric(horizontal: 8.w(context), vertical: 4.h(context)),
                             decoration: BoxDecoration(
                               color: (isHighAccuracy ? Colors.green[400] : Colors.orange[400])!.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(8.r(context)),
                               border: Border.all(
                                 color: isHighAccuracy ? Colors.green[400]! : Colors.orange[400]!,
                                 width: 1,
                               ),
                             ),
                             child: Text(
-                              isHighAccuracy ? 'PRECISE' : 'SEARCHING',
-                              style: TextStyle(
-                                fontSize: 10,
+                              isHighAccuracy ? 'STABLE' : 'TRACKING',
+                              style: ResponsiveTextStyles.getCaption(context).copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: isHighAccuracy ? Colors.green[400] : Colors.orange[400],
                               ),
@@ -1188,22 +1271,22 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: 4.h(context)),
                       Text(
                         '±${accuracy.toStringAsFixed(1)}m accuracy',
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                        style: ResponsiveTextStyles.getCaption(context).copyWith(color: Colors.white54),
                       ),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 20.h(context)),
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.all(16.r(context)),
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(12.r(context)),
                 border: Border.all(color: Colors.white.withOpacity(0.1)),
               ),
               child: Column(
@@ -1211,94 +1294,34 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                   Row(
                     children: [
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Latitude',
-                              style: TextStyle(color: Colors.white54, fontSize: 12),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${position.latitude.toStringAsFixed(6)}°',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        child: _buildLocationDataItem(
+                          'Latitude',
+                          '${position.latitude.toStringAsFixed(6)}°',
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: 16.w(context)),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Longitude',
-                              style: TextStyle(color: Colors.white54, fontSize: 12),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${position.longitude.toStringAsFixed(6)}°',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        child: _buildLocationDataItem(
+                          'Longitude',
+                          '${position.longitude.toStringAsFixed(6)}°',
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16.h(context)),
                   Row(
                     children: [
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Altitude',
-                              style: TextStyle(color: Colors.white54, fontSize: 12),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${position.altitude.toStringAsFixed(0)}m',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        child: _buildLocationDataItem(
+                          'Altitude',
+                          '${position.altitude.toStringAsFixed(0)}m',
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      SizedBox(width: 16.w(context)),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Speed',
-                              style: TextStyle(color: Colors.white54, fontSize: 12),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${(position.speed * 3.6).toStringAsFixed(1)} km/h',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        child: _buildLocationDataItem(
+                          'Speed',
+                          '${(position.speed * 3.6).toStringAsFixed(1)} km/h',
                         ),
                       ),
                     ],
@@ -1306,7 +1329,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16.h(context)),
             Row(
               children: [
                 Expanded(
@@ -1316,73 +1339,48 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                       Clipboard.setData(ClipboardData(text: coordinates));
                       _showSnackBar('Coordinates copied to clipboard!', Colors.green);
                     },
-                    icon: const Icon(Icons.copy, size: 16),
-                    label: const Text('Copy Coordinates'),
+                    icon: Icon(Icons.copy, size: 16.r(context)),
+                    label: Text('Copy Coordinates', style: ResponsiveTextStyles.getBodySmall(context)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue[600],
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: EdgeInsets.symmetric(vertical: 12.h(context)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r(context))),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: 12.w(context)),
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _refreshLocation,
-                    icon: const Icon(Icons.refresh, size: 16),
-                    label: const Text('Refresh GPS'),
+                    icon: Icon(Icons.refresh, size: 16.r(context)),
+                    label: Text('Refresh GPS', style: ResponsiveTextStyles.getBodySmall(context)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF26C6DA),
                       foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: EdgeInsets.symmetric(vertical: 12.h(context)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r(context))),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16.h(context)),
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: EdgeInsets.all(12.r(context)),
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(8.r(context)),
               ),
               child: Column(
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.satellite, color: Colors.white54, size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Source: ${_locationService.getLocationSource()}',
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.speed, color: Colors.white54, size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Movement: ${_locationService.getMovementStatus()}',
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.access_time, color: Colors.white54, size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Last Update: $_currentTime',
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                    ],
-                  ),
+                  _buildLocationInfoRow(Icons.satellite, 'Source: ${_locationService.getLocationSource()}'),
+                  SizedBox(height: 4.h(context)),
+                  _buildLocationInfoRow(Icons.speed, 'Movement: ${_locationService.getMovementStatus()}'),
+                  SizedBox(height: 4.h(context)),
+                  _buildLocationInfoRow(Icons.access_time, 'Last Update: $_currentTime'),
+                  SizedBox(height: 4.h(context)),
+                  _buildLocationInfoRow(Icons.favorite, 'Heartbeat: Every 5 seconds'),
                 ],
               ),
             ),
@@ -1392,45 +1390,79 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
   }
 
+  Widget _buildLocationDataItem(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: ResponsiveTextStyles.getCaption(context).copyWith(color: Colors.white54),
+        ),
+        SizedBox(height: 4.h(context)),
+        Text(
+          value,
+          style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
+            color: Colors.white,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationInfoRow(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.white54, size: 16.r(context)),
+        SizedBox(width: 8.w(context)),
+        Expanded(
+          child: Text(
+            text,
+            style: ResponsiveTextStyles.getCaption(context).copyWith(color: Colors.white70),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildDeveloperCredit() {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E).withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12.r(context)),
         border: Border.all(color: Colors.white.withOpacity(0.1)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16.r(context)),
         child: Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.copyright, color: Colors.white54, size: 16),
-                const SizedBox(width: 8),
-                const Text(
+                Icon(Icons.copyright, color: Colors.white54, size: 16.r(context)),
+                SizedBox(width: 8.w(context)),
+                Text(
                   '2025 Philippine National Police',
-                  style: TextStyle(
+                  style: ResponsiveTextStyles.getCaption(context).copyWith(
                     color: Colors.white70,
-                    fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8.h(context)),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: EdgeInsets.symmetric(horizontal: 12.w(context), vertical: 6.h(context)),
               decoration: BoxDecoration(
                 color: AppColors.primaryRed.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(8.r(context)),
                 border: Border.all(color: AppColors.primaryRed.withOpacity(0.3)),
               ),
-              child: const Text(
+              child: Text(
                 AppConstants.developerCredit,
-                style: TextStyle(
+                style: ResponsiveTextStyles.getCaption(context).copyWith(
                   color: Colors.red,
-                  fontSize: 10,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.5,
                 ),

@@ -1,4 +1,6 @@
+// widgets/metric_card.dart
 import 'package:flutter/material.dart';
+import '../utils/responsive_utils.dart';
 
 class MetricCard extends StatefulWidget {
   final String title;
@@ -82,21 +84,6 @@ class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final isSmallScreen = screenWidth < 360 || screenHeight < 640;
-    final isVerySmallScreen = screenWidth < 320;
-    
-    // Adaptive sizing
-    final cardPadding = isVerySmallScreen ? 12.0 : isSmallScreen ? 14.0 : 16.0;
-    final titleFontSize = isVerySmallScreen ? 10.0 : isSmallScreen ? 11.0 : 12.0;
-    final valueFontSize = isVerySmallScreen ? 18.0 : isSmallScreen ? 20.0 : 22.0;
-    final subtitleFontSize = isVerySmallScreen ? 8.0 : isSmallScreen ? 9.0 : 10.0;
-    final iconSize = isVerySmallScreen ? 16.0 : isSmallScreen ? 18.0 : 20.0;
-    final iconPadding = isVerySmallScreen ? 6.0 : isSmallScreen ? 7.0 : 8.0;
-    final indicatorSize = isVerySmallScreen ? 3.0 : 4.0;
-    final spacing = isVerySmallScreen ? 8.0 : isSmallScreen ? 10.0 : 12.0;
-    
     return GestureDetector(
       onTapDown: _onTapDown,
       onTapUp: _onTapUp,
@@ -116,7 +103,7 @@ class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
                     const Color(0xFF2A2A2A).withOpacity(0.8),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(isVerySmallScreen ? 12 : 16),
+                borderRadius: BorderRadius.circular(16.r(context)),
                 border: Border.all(
                   color: Colors.white.withOpacity(0.1),
                   width: 1,
@@ -136,7 +123,7 @@ class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
                 ],
               ),
               child: Padding(
-                padding: EdgeInsets.all(cardPadding),
+                padding: EdgeInsets.all(ResponsiveUtils.getSpacing(context, SpacingSize.md)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -149,9 +136,8 @@ class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
                             children: [
                               Text(
                                 widget.title,
-                                style: TextStyle(
+                                style: ResponsiveTextStyles.getCaption(context).copyWith(
                                   color: Colors.grey[400],
-                                  fontSize: titleFontSize,
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: 0.5,
                                 ),
@@ -159,7 +145,7 @@ class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               if (widget.isRealTime) ...[
-                                SizedBox(height: spacing / 6),
+                                SizedBox(height: ResponsiveUtils.getSpacing(context, SpacingSize.xs) / 2),
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -169,8 +155,8 @@ class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
                                         return Transform.scale(
                                           scale: _pulseAnimation.value,
                                           child: Container(
-                                            width: indicatorSize,
-                                            height: indicatorSize,
+                                            width: 3.r(context),
+                                            height: 3.r(context),
                                             decoration: BoxDecoration(
                                               color: Colors.green[400],
                                               shape: BoxShape.circle,
@@ -186,12 +172,12 @@ class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
                                         );
                                       },
                                     ),
-                                    SizedBox(width: spacing / 3),
+                                    SizedBox(width: ResponsiveUtils.getSpacing(context, SpacingSize.xs) / 3),
                                     Text(
                                       'LIVE',
-                                      style: TextStyle(
+                                      style: ResponsiveTextStyles.getCaption(context).copyWith(
                                         color: Colors.green[400],
-                                        fontSize: subtitleFontSize - 1,
+                                        fontSize: 8.sp(context),
                                         fontWeight: FontWeight.bold,
                                         letterSpacing: 0.5,
                                       ),
@@ -203,10 +189,10 @@ class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
                           ),
                         ),
                         Container(
-                          padding: EdgeInsets.all(iconPadding),
+                          padding: EdgeInsets.all(ResponsiveUtils.getSpacing(context, SpacingSize.sm)),
                           decoration: BoxDecoration(
                             color: widget.iconColor.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(isVerySmallScreen ? 6 : 8),
+                            borderRadius: BorderRadius.circular(8.r(context)),
                             border: Border.all(
                               color: widget.iconColor.withOpacity(0.3),
                               width: 1,
@@ -215,29 +201,27 @@ class _MetricCardState extends State<MetricCard> with TickerProviderStateMixin {
                           child: Icon(
                             widget.icon,
                             color: widget.iconColor,
-                            size: iconSize,
+                            size: ResponsiveUtils.getIconSize(context, IconSize.md),
                           ),
                         ),
                       ],
                     ),
-                    SizedBox(height: spacing),
+                    SizedBox(height: ResponsiveUtils.getSpacing(context, SpacingSize.sm)),
                     Text(
                       widget.value,
-                      style: TextStyle(
-                        fontSize: valueFontSize,
-                        fontWeight: FontWeight.bold,
+                      style: ResponsiveTextStyles.getHeading3(context).copyWith(
                         color: widget.iconColor,
                         fontFamily: 'monospace',
+                        fontWeight: FontWeight.bold,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    SizedBox(height: spacing / 6),
+                    SizedBox(height: ResponsiveUtils.getSpacing(context, SpacingSize.xs) / 3),
                     Text(
                       widget.subtitle,
-                      style: TextStyle(
+                      style: ResponsiveTextStyles.getCaption(context).copyWith(
                         color: Colors.grey[500],
-                        fontSize: subtitleFontSize,
                         fontWeight: FontWeight.w500,
                         letterSpacing: 0.5,
                       ),

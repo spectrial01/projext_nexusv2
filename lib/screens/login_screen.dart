@@ -1,3 +1,4 @@
+// screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,6 +10,7 @@ import '../services/api_service.dart';
 import '../services/background_service.dart';
 import '../services/watchdog_service.dart';
 import '../utils/constants.dart';
+import '../utils/responsive_utils.dart';
 import 'dashboard_screen.dart';
 import 'location_screen.dart';
 
@@ -27,7 +29,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
       appBar: AppBar(
-        title: const Text('Scan QR Code', style: TextStyle(color: Colors.white)),
+        title: Text('Scan QR Code', style: ResponsiveTextStyles.getBodyLarge(context).copyWith(color: Colors.white)),
         backgroundColor: const Color(0xFF1E1E1E),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
@@ -72,37 +74,36 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
             ),
             Center(
               child: Container(
-                width: 250,
-                height: 250,
+                width: 250.r(context),
+                height: 250.r(context),
                 decoration: BoxDecoration(
                   border: Border.all(color: const Color(0xFF26C6DA), width: 3),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(20.r(context)),
                 ),
                 child: Container(
-                  margin: const EdgeInsets.all(20),
+                  margin: EdgeInsets.all(20.r(context)),
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(10.r(context)),
                   ),
                 ),
               ),
             ),
             Positioned(
-              bottom: 50,
+              bottom: 50.h(context),
               left: 0,
               right: 0,
               child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 40),
-                padding: const EdgeInsets.all(20),
+                margin: EdgeInsets.symmetric(horizontal: 40.w(context)),
+                padding: EdgeInsets.all(20.r(context)),
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(15),
+                  borderRadius: BorderRadius.circular(15.r(context)),
                 ),
-                child: const Text(
+                child: Text(
                   'Position the QR code within the frame to scan',
-                  style: TextStyle(
+                  style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
                     color: Colors.white,
-                    fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),
                   textAlign: TextAlign.center,
@@ -136,7 +137,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   bool _isLoading = false;
   bool _isLocationChecking = false;
   String _appVersion = '';
-  bool _hasStoredCredentials = false;
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -186,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
 
   Future<void> _initializeScreen() async {
     await _getAppVersion();
-    await _loadStoredCredentials();
+    await _loadStoredCredentials(); // CHANGED: Auto-load credentials
     await _initializeWatchdog();
   }
 
@@ -203,6 +203,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     }
   }
 
+  // CHANGED: Auto-load stored credentials (like before)
   Future<void> _loadStoredCredentials() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -214,7 +215,6 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           setState(() {
             _tokenController.text = storedToken;
             _deploymentCodeController.text = storedDeploymentCode;
-            _hasStoredCredentials = true;
           });
         }
       }
@@ -241,8 +241,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         content: Text(message),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.r(context))),
+        margin: EdgeInsets.all(16.r(context)),
       ),
     );
   }
@@ -379,35 +379,35 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.r(context))),
         backgroundColor: const Color(0xFF1E1E1E),
         title: Row(
           children: [
-            Icon(Icons.location_off, color: Colors.red[400], size: 24),
-            const SizedBox(width: 12),
-            const Text('Location Required', style: TextStyle(color: Colors.white)),
+            Icon(Icons.location_off, color: Colors.red[400], size: 24.r(context)),
+            SizedBox(width: 12.w(context)),
+            Text('Location Required', style: ResponsiveTextStyles.getBodyLarge(context).copyWith(color: Colors.white)),
           ],
         ),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'This app requires location access to function properly.',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
+              style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 12),
-            Text('Please ensure:', style: TextStyle(color: Colors.white70)),
-            SizedBox(height: 8),
-            Text('• Location permission is granted', style: TextStyle(color: Colors.white54)),
-            Text('• Location services are enabled', style: TextStyle(color: Colors.white54)),
-            Text('• GPS is turned on', style: TextStyle(color: Colors.white54)),
+            SizedBox(height: 12.h(context)),
+            Text('Please ensure:', style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70)),
+            SizedBox(height: 8.h(context)),
+            Text('• Location permission is granted', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
+            Text('• Location services are enabled', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
+            Text('• GPS is turned on', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+            child: Text('Cancel', style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -420,9 +420,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF26C6DA),
               foregroundColor: Colors.black,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r(context))),
             ),
-            child: const Text('Setup Location'),
+            child: Text('Setup Location', style: ResponsiveTextStyles.getBodyMedium(context)),
           ),
         ],
       ),
@@ -454,22 +454,22 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
               child: SlideTransition(
                 position: _slideAnimation,
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
+                  padding: EdgeInsets.all(24.r(context)),
                   child: Form(
                     key: _formKey,
                     child: Column(
                       children: [
-                        const SizedBox(height: 40),
+                        SizedBox(height: 40.h(context)),
                         _buildHeader(),
-                        const SizedBox(height: 40),
+                        SizedBox(height: 40.h(context)),
                         _buildCredentialsSection(),
-                        const SizedBox(height: 32),
+                        SizedBox(height: 32.h(context)),
                         _buildInputFields(),
-                        const SizedBox(height: 32),
+                        SizedBox(height: 32.h(context)),
                         _buildLoginButton(),
-                        const SizedBox(height: 24),
+                        SizedBox(height: 24.h(context)),
                         _buildInfoCard(),
-                        const SizedBox(height: 32),
+                        SizedBox(height: 32.h(context)),
                         _buildFooter(),
                       ],
                     ),
@@ -484,20 +484,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   }
 
   Widget _buildHeader() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final isSmallScreen = screenWidth < 360 || screenHeight < 640;
-    final isVerySmallScreen = screenWidth < 320;
-    
-    // Adaptive sizing
-    final logoSize = isVerySmallScreen ? 36.0 : isSmallScreen ? 42.0 : 48.0;
-    final titleFontSize = isVerySmallScreen ? 14.0 : isSmallScreen ? 16.0 : 18.0;
-    final mottoFontSize = isVerySmallScreen ? 10.0 : isSmallScreen ? 11.0 : 12.0;
-    final containerPadding = isVerySmallScreen ? 16.0 : isSmallScreen ? 20.0 : 24.0;
-    final logoPadding = isVerySmallScreen ? 12.0 : 16.0;
-    
     return Container(
-      padding: EdgeInsets.all(containerPadding),
+      padding: EdgeInsets.all(ResponsiveUtils.isVerySmallScreen(context) ? 16.r(context) : 24.r(context)),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -507,12 +495,12 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             AppColors.primaryRed.withOpacity(0.05),
           ],
         ),
-        borderRadius: BorderRadius.circular(isVerySmallScreen ? 16 : 20),
+        borderRadius: BorderRadius.circular(20.r(context)),
         border: Border.all(color: AppColors.primaryRed.withOpacity(0.3)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryRed.withOpacity(0.2),
-            blurRadius: isVerySmallScreen ? 15 : 20,
+            blurRadius: 20,
             spreadRadius: 2,
           ),
         ],
@@ -520,7 +508,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       child: Column(
         children: [
           Container(
-            padding: EdgeInsets.all(logoPadding),
+            padding: EdgeInsets.all(16.r(context)),
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
@@ -535,49 +523,45 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             child: ClipOval(
               child: Image.asset(
                 'assets/images/pnp_logo.png',
-                width: logoSize,
-                height: logoSize,
+                width: 48.r(context),
+                height: 48.r(context),
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) {
                   print('Error loading PNP logo: $error');
                   return Icon(
                     Icons.shield,
                     color: AppColors.primaryRed,
-                    size: logoSize,
+                    size: 48.r(context),
                   );
                 },
               ),
             ),
           ),
-          SizedBox(height: isVerySmallScreen ? 12 : 16),
+          SizedBox(height: 16.h(context)),
           ShaderMask(
             shaderCallback: (bounds) => LinearGradient(
               colors: [Colors.white, Colors.white70],
             ).createShader(bounds),
             child: Text(
               AppConstants.appTitle.toUpperCase(),
-              style: TextStyle(
-                fontSize: titleFontSize,
+              style: ResponsiveTextStyles.getBodyLarge(context).copyWith(
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
                 letterSpacing: 1.2,
               ),
               textAlign: TextAlign.center,
-              maxLines: isVerySmallScreen ? 2 : 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          SizedBox(height: isVerySmallScreen ? 8 : 12),
+          SizedBox(height: 12.h(context)),
           Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: isVerySmallScreen ? 12 : 16, 
-              vertical: isVerySmallScreen ? 6 : 8
-            ),
+            padding: EdgeInsets.symmetric(horizontal: 16.w(context), vertical: 8.h(context)),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [AppColors.primaryGreen, AppColors.primaryGreen.withOpacity(0.8)],
               ),
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(20.r(context)),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.primaryGreen.withOpacity(0.3),
@@ -588,8 +572,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             ),
             child: Text(
               AppConstants.appMotto,
-              style: TextStyle(
-                fontSize: mottoFontSize,
+              style: ResponsiveTextStyles.getCaption(context).copyWith(
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
                 letterSpacing: 0.8,
@@ -611,24 +594,19 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           shaderCallback: (bounds) => LinearGradient(
             colors: [AppColors.primaryRed, Colors.red[300]!],
           ).createShader(bounds),
-          child: const Text(
+          child: Text(
             'Secure Access Required',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+            style: ResponsiveTextStyles.getHeading2(context).copyWith(
               color: Colors.white,
             ),
             textAlign: TextAlign.center,
           ),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: 8.h(context)),
         Text(
-          _hasStoredCredentials 
-            ? 'Credentials loaded from previous session'
-            : 'Enter your authentication credentials',
-          style: TextStyle(
-            color: _hasStoredCredentials ? Colors.green[400] : Colors.white54,
-            fontSize: 14,
+          'Enter your authentication credentials',
+          style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
+            color: Colors.white54,
             fontWeight: FontWeight.w500,
           ),
           textAlign: TextAlign.center,
@@ -641,7 +619,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     return Column(
       children: [
         _buildTokenField(),
-        const SizedBox(height: 20),
+        SizedBox(height: 20.h(context)),
         _buildDeploymentCodeField(),
       ],
     );
@@ -650,7 +628,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   Widget _buildTokenField() {
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12.r(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -661,36 +639,36 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       ),
       child: TextFormField(
         controller: _tokenController,
-        style: const TextStyle(color: Colors.white),
+        style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white),
         decoration: InputDecoration(
           labelText: 'Authentication Token',
-          labelStyle: TextStyle(color: Colors.white60),
+          labelStyle: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white60),
           hintText: 'Enter or scan your token',
-          hintStyle: TextStyle(color: Colors.white30),
-          prefixIcon: Icon(Icons.vpn_key, color: AppColors.primaryRed),
+          hintStyle: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white30),
+          prefixIcon: Icon(Icons.vpn_key, color: AppColors.primaryRed, size: 20.r(context)),
           suffixIcon: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                margin: const EdgeInsets.only(right: 4),
+                margin: EdgeInsets.only(right: 4.w(context)),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(8.r(context)),
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.file_upload, color: Colors.white70, size: 20),
+                  icon: Icon(Icons.file_upload, color: Colors.white70, size: 20.r(context)),
                   onPressed: () => _uploadAndScanQRCode(_tokenController),
                   tooltip: 'Upload QR from Gallery',
                 ),
               ),
               Container(
-                margin: const EdgeInsets.only(right: 8),
+                margin: EdgeInsets.only(right: 8.w(context)),
                 decoration: BoxDecoration(
                   color: const Color(0xFF26C6DA).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(8.r(context)),
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF26C6DA), size: 20),
+                  icon: Icon(Icons.qr_code_scanner, color: const Color(0xFF26C6DA), size: 20.r(context)),
                   onPressed: () => _scanQRCode(_tokenController),
                   tooltip: 'Scan QR with Camera',
                 ),
@@ -700,19 +678,19 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           filled: true,
           fillColor: Colors.white.withOpacity(0.08),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(12.r(context)),
             borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(12.r(context)),
             borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(12.r(context)),
             borderSide: BorderSide(color: AppColors.primaryRed, width: 2),
           ),
           errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(12.r(context)),
             borderSide: const BorderSide(color: Colors.red, width: 2),
           ),
         ),
@@ -725,7 +703,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   Widget _buildDeploymentCodeField() {
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12.r(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.3),
@@ -737,39 +715,39 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       child: TextFormField(
         controller: _deploymentCodeController,
         obscureText: !_isDeploymentCodeVisible,
-        style: const TextStyle(color: Colors.white),
+        style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white),
         decoration: InputDecoration(
           labelText: 'Deployment Code',
-          labelStyle: TextStyle(color: Colors.white60),
+          labelStyle: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white60),
           hintText: 'Enter your deployment code',
-          hintStyle: TextStyle(color: Colors.white30),
-          prefixIcon: Icon(Icons.badge, color: AppColors.primaryRed),
+          hintStyle: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white30),
+          prefixIcon: Icon(Icons.badge, color: AppColors.primaryRed, size: 20.r(context)),
           suffixIcon: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                margin: const EdgeInsets.only(right: 4),
+                margin: EdgeInsets.only(right: 4.w(context)),
                 decoration: BoxDecoration(
                   color: const Color(0xFF26C6DA).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(8.r(context)),
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF26C6DA), size: 20),
+                  icon: Icon(Icons.qr_code_scanner, color: const Color(0xFF26C6DA), size: 20.r(context)),
                   onPressed: () => _scanQRCode(_deploymentCodeController),
                   tooltip: 'Scan Deployment Code',
                 ),
               ),
               Container(
-                margin: const EdgeInsets.only(right: 8),
+                margin: EdgeInsets.only(right: 8.w(context)),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(8.r(context)),
                 ),
                 child: IconButton(
                   icon: Icon(
                     _isDeploymentCodeVisible ? Icons.visibility : Icons.visibility_off,
                     color: Colors.white70,
-                    size: 20,
+                    size: 20.r(context),
                   ),
                   onPressed: () => setState(() => _isDeploymentCodeVisible = !_isDeploymentCodeVisible),
                 ),
@@ -779,19 +757,19 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           filled: true,
           fillColor: Colors.white.withOpacity(0.08),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(12.r(context)),
             borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(12.r(context)),
             borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(12.r(context)),
             borderSide: BorderSide(color: AppColors.primaryRed, width: 2),
           ),
           errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(12.r(context)),
             borderSide: const BorderSide(color: Colors.red, width: 2),
           ),
         ),
@@ -803,9 +781,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   Widget _buildLoginButton() {
     return Container(
       width: double.infinity,
-      height: 56,
+      height: 56.h(context),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12.r(context)),
         boxShadow: [
           BoxShadow(
             color: AppColors.primaryRed.withOpacity(0.3),
@@ -819,36 +797,36 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primaryRed,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r(context))),
           elevation: 0,
         ),
         child: _isLoading || _isLocationChecking
           ? Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  width: 20,
-                  height: 20,
+                SizedBox(
+                  width: 20.r(context),
+                  height: 20.r(context),
                   child: CircularProgressIndicator(
                     color: Colors.white,
                     strokeWidth: 2,
                   ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: 16.w(context)),
                 Text(
                   _isLocationChecking ? 'Checking Location...' : 'Authenticating...',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: ResponsiveTextStyles.getBodyLarge(context).copyWith(fontWeight: FontWeight.bold),
                 ),
               ],
             )
-          : const Row(
+          : Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.security, size: 24),
-                SizedBox(width: 12),
+                Icon(Icons.security, size: 24.r(context)),
+                SizedBox(width: 12.w(context)),
                 Text(
                   'Secure Login',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: ResponsiveTextStyles.getBodyLarge(context).copyWith(fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -856,109 +834,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     );
   }
 
-  Widget _buildStoredCredentialsInfo() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.green[900]!.withOpacity(0.3),
-            Colors.green[800]!.withOpacity(0.2),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.green[400]!.withOpacity(0.5)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green[400], size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Previous login credentials loaded automatically',
-                  style: TextStyle(
-                    color: Colors.green[100],
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _clearStoredCredentials,
-                  icon: const Icon(Icons.clear, size: 16),
-                  label: const Text('Clear Stored', style: TextStyle(fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange[600],
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _useStoredCredentials,
-                  icon: const Icon(Icons.login, size: 16),
-                  label: const Text('Quick Login', style: TextStyle(fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green[600],
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Add new method to clear stored credentials
-  Future<void> _clearStoredCredentials() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('token');
-      await prefs.remove('deploymentCode');
-      await prefs.remove('qr_code');
-      
-      if (mounted) {
-        setState(() {
-          _tokenController.clear();
-          _deploymentCodeController.clear();
-          _hasStoredCredentials = false;
-        });
-        
-        _showSnackBar('Stored credentials cleared', Colors.orange);
-      }
-    } catch (e) {
-      print('LoginScreen: Error clearing credentials: $e');
-      _showSnackBar('Failed to clear credentials', Colors.red);
-    }
-  }
-
-  // Add new method to use stored credentials for quick login
-  Future<void> _useStoredCredentials() async {
-    if (_hasStoredCredentials && _tokenController.text.isNotEmpty && _deploymentCodeController.text.isNotEmpty) {
-      _login(); // Use the existing login method
-    } else {
-      _showSnackBar('No valid stored credentials found', Colors.orange);
-    }
-  }
-
   Widget _buildInfoCard() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(16.r(context)),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -966,19 +844,18 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             Colors.blue[800]!.withOpacity(0.2),
           ],
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12.r(context)),
         border: Border.all(color: Colors.blue[400]!.withOpacity(0.5)),
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline, color: Colors.lightBlueAccent, size: 20),
-          const SizedBox(width: 12),
+          Icon(Icons.info_outline, color: Colors.lightBlueAccent, size: 20.r(context)),
+          SizedBox(width: 12.w(context)),
           Expanded(
             child: Text(
               'Contact your administrator if you don\'t have a token or deployment code',
-              style: TextStyle(
+              style: ResponsiveTextStyles.getCaption(context).copyWith(
                 color: Colors.lightBlueAccent[100],
-                fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -990,10 +867,10 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
 
   Widget _buildFooter() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(20.r(context)),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12.r(context)),
         border: Border.all(color: Colors.white.withOpacity(0.1)),
       ),
       child: Column(
@@ -1001,41 +878,41 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.copyright, color: Colors.white54, size: 16),
-              const SizedBox(width: 8),
-              const Text(
-                '2025 Philippine National Police',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+              Icon(Icons.copyright, color: Colors.white54, size: 16.r(context)),
+              SizedBox(width: 8.w(context)),
+              Flexible(
+                child: Text(
+                  '2025 Philippine National Police',
+                  style: ResponsiveTextStyles.getCaption(context).copyWith(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12.h(context)),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: EdgeInsets.symmetric(horizontal: 12.w(context), vertical: 6.h(context)),
             decoration: BoxDecoration(
               color: AppColors.primaryRed.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(8.r(context)),
               border: Border.all(color: AppColors.primaryRed.withOpacity(0.3)),
             ),
-            child: const Text(
+            child: Text(
               AppConstants.developerCredit,
-              style: TextStyle(
+              style: ResponsiveTextStyles.getCaption(context).copyWith(
                 color: Colors.red,
-                fontSize: 10,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 0.5,
               ),
               textAlign: TextAlign.center,
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12.h(context)),
           Text(
             'v$_appVersion',
-            style: TextStyle(color: Colors.white38, fontSize: 12),
+            style: ResponsiveTextStyles.getCaption(context).copyWith(color: Colors.white38),
           ),
         ],
       ),

@@ -1,6 +1,8 @@
+// screens/permission_screen.dart
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/permission_service.dart';
+import '../utils/responsive_utils.dart';
 import 'login_screen.dart';
 
 class PermissionStep {
@@ -183,37 +185,42 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.r(context))),
         backgroundColor: const Color(0xFF1E1E1E),
         title: Row(
           children: [
-            Icon(Icons.settings, color: Colors.orange[400], size: 24),
-            const SizedBox(width: 12),
-            Text('$permissionTitle Required', style: const TextStyle(color: Colors.white)),
+            Icon(Icons.settings, color: Colors.orange[400], size: 24.r(context)),
+            SizedBox(width: 12.w(context)),
+            Flexible(
+              child: Text(
+                '$permissionTitle Required', 
+                style: ResponsiveTextStyles.getBodyLarge(context).copyWith(color: Colors.white)
+              ),
+            ),
           ],
         ),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'This permission has been permanently denied.',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
+              style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 12),
+            SizedBox(height: 12.h(context)),
             Text(
               'Please go to your device settings to enable it manually:',
-              style: TextStyle(color: Colors.white70),
+              style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70),
             ),
-            SizedBox(height: 8),
-            Text('1. Open device Settings', style: TextStyle(color: Colors.white54)),
-            Text('2. Find this app', style: TextStyle(color: Colors.white54)),
-            Text('3. Enable the required permission', style: TextStyle(color: Colors.white54)),
+            SizedBox(height: 8.h(context)),
+            Text('1. Open device Settings', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
+            Text('2. Find this app', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
+            Text('3. Enable the required permission', style: ResponsiveTextStyles.getBodySmall(context).copyWith(color: Colors.white54)),
           ],
         ),
         actions: [
           TextButton(
-            child: const Text('Skip', style: TextStyle(color: Colors.white70)),
+            child: Text('Skip', style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70)),
             onPressed: () {
               Navigator.of(context).pop();
               _moveToNextStep();
@@ -223,9 +230,9 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange[600],
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r(context))),
             ),
-            child: const Text('Open Settings'),
+            child: Text('Open Settings', style: ResponsiveTextStyles.getBodyMedium(context)),
             onPressed: () {
               Navigator.of(context).pop();
               openAppSettings();
@@ -249,20 +256,20 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
               colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
             ),
           ),
-          child: const Center(
+          child: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                CircularProgressIndicator(color: Color(0xFF26C6DA)),
-                SizedBox(height: 24),
+                CircularProgressIndicator(color: const Color(0xFF26C6DA)),
+                SizedBox(height: 24.h(context)),
                 Text(
                   'All Set! Preparing Login...',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: ResponsiveTextStyles.getBodyLarge(context).copyWith(color: Colors.white, fontWeight: FontWeight.bold),
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 8.h(context)),
                 Text(
                   'Your permissions have been configured successfully',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                  style: ResponsiveTextStyles.getBodyMedium(context).copyWith(color: Colors.white70),
                 ),
               ],
             ),
@@ -298,20 +305,20 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
                   child: SlideTransition(
                     position: _slideAnimation,
                     child: Padding(
-                      padding: const EdgeInsets.all(24.0),
+                      padding: EdgeInsets.all(24.r(context)),
                       child: Column(
                         children: [
-                          const SizedBox(height: 40),
+                          SizedBox(height: 40.h(context)),
                           _buildPermissionIcon(currentStepInfo),
-                          const SizedBox(height: 32),
+                          SizedBox(height: 32.h(context)),
                           _buildPermissionInfo(currentStepInfo),
-                          const SizedBox(height: 40),
+                          SizedBox(height: 40.h(context)),
                           _buildActionButton(currentStepInfo),
-                          const SizedBox(height: 24),
+                          SizedBox(height: 24.h(context)),
                           if (!currentStepInfo.isCritical) _buildSkipButton(),
                           const Spacer(),
                           _buildProgressIndicator(),
-                          const SizedBox(height: 20),
+                          SizedBox(height: 20.h(context)),
                         ],
                       ),
                     ),
@@ -327,7 +334,7 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: EdgeInsets.symmetric(horizontal: 24.w(context), vertical: 16.h(context)),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -348,48 +355,45 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: EdgeInsets.all(8.r(context)),
             decoration: BoxDecoration(
               color: const Color(0xFF26C6DA).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(10.r(context)),
             ),
-            child: const Icon(Icons.security, color: Color(0xFF26C6DA), size: 24),
+            child: Icon(Icons.security, color: const Color(0xFF26C6DA), size: 24.r(context)),
           ),
-          const SizedBox(width: 16),
-          const Expanded(
+          SizedBox(width: 16.w(context)),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Security Setup',
-                  style: TextStyle(
+                  style: ResponsiveTextStyles.getBodyLarge(context).copyWith(
                     color: Colors.white,
-                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
                   'Configure essential permissions',
-                  style: TextStyle(
+                  style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
                     color: Colors.white70,
-                    fontSize: 14,
                   ),
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: EdgeInsets.symmetric(horizontal: 12.w(context), vertical: 6.h(context)),
             decoration: BoxDecoration(
               color: const Color(0xFF26C6DA).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(12.r(context)),
               border: Border.all(color: const Color(0xFF26C6DA)),
             ),
             child: Text(
               '${_currentStep + 1}/${_permissionSteps.length}',
-              style: const TextStyle(
-                color: Color(0xFF26C6DA),
-                fontSize: 12,
+              style: ResponsiveTextStyles.getCaption(context).copyWith(
+                color: const Color(0xFF26C6DA),
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -401,8 +405,8 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
 
   Widget _buildPermissionIcon(PermissionStep step) {
     return Container(
-      width: 120,
-      height: 120,
+      width: 120.r(context),
+      height: 120.r(context),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -424,7 +428,7 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
       ),
       child: Icon(
         step.icon,
-        size: 60,
+        size: 60.r(context),
         color: const Color(0xFF26C6DA),
       ),
     );
@@ -435,66 +439,61 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
       children: [
         Text(
           step.title,
-          style: const TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
+          style: ResponsiveTextStyles.getHeading2(context).copyWith(
             color: Colors.white,
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: 8.h(context)),
         if (!step.isCritical) ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: EdgeInsets.symmetric(horizontal: 12.w(context), vertical: 4.h(context)),
             decoration: BoxDecoration(
               color: Colors.orange.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(12.r(context)),
               border: Border.all(color: Colors.orange),
             ),
-            child: const Text(
+            child: Text(
               'OPTIONAL',
-              style: TextStyle(
+              style: ResponsiveTextStyles.getCaption(context).copyWith(
                 color: Colors.orange,
-                fontSize: 12,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1,
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16.h(context)),
         ] else ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding: EdgeInsets.symmetric(horizontal: 12.w(context), vertical: 4.h(context)),
             decoration: BoxDecoration(
               color: Colors.red.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(12.r(context)),
               border: Border.all(color: Colors.red),
             ),
-            child: const Text(
+            child: Text(
               'REQUIRED',
-              style: TextStyle(
+              style: ResponsiveTextStyles.getCaption(context).copyWith(
                 color: Colors.red,
-                fontSize: 12,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1,
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16.h(context)),
         ],
         Container(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(20.r(context)),
           decoration: BoxDecoration(
             color: Colors.black.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(16.r(context)),
             border: Border.all(color: Colors.white.withOpacity(0.1)),
           ),
           child: Text(
             step.description,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
               color: Colors.white70,
-              fontSize: 16,
               height: 1.5,
             ),
           ),
@@ -506,9 +505,9 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
   Widget _buildActionButton(PermissionStep step) {
     return Container(
       width: double.infinity,
-      height: 56,
+      height: 56.h(context),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12.r(context)),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFF26C6DA).withOpacity(0.3),
@@ -522,36 +521,36 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF26C6DA),
           foregroundColor: Colors.black,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r(context))),
           elevation: 0,
         ),
         child: _isLoading
-          ? const Row(
+          ? Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 20.r(context),
+                  height: 20.r(context),
                   child: CircularProgressIndicator(
                     color: Colors.black,
                     strokeWidth: 2,
                   ),
                 ),
-                SizedBox(width: 16),
+                SizedBox(width: 16.w(context)),
                 Text(
                   'Processing...',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: ResponsiveTextStyles.getBodyLarge(context).copyWith(fontWeight: FontWeight.bold),
                 ),
               ],
             )
           : Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.check_circle, size: 24),
-                const SizedBox(width: 12),
+                Icon(Icons.check_circle, size: 24.r(context)),
+                SizedBox(width: 12.w(context)),
                 Text(
                   step.isCritical ? 'Grant Permission' : 'Grant Optional Permission',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: ResponsiveTextStyles.getBodyLarge(context).copyWith(fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -566,16 +565,16 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
         onPressed: _moveToNextStep,
         style: TextButton.styleFrom(
           foregroundColor: Colors.white54,
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: EdgeInsets.symmetric(vertical: 16.h(context)),
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.skip_next, size: 20),
-            SizedBox(width: 8),
+            Icon(Icons.skip_next, size: 20.r(context)),
+            SizedBox(width: 8.w(context)),
             Text(
               'Skip for now',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              style: ResponsiveTextStyles.getBodyMedium(context).copyWith(fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -589,30 +588,28 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'Setup Progress',
-              style: TextStyle(
+              style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
                 color: Colors.white70,
-                fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
             Text(
               '${_currentStep + 1} of ${_permissionSteps.length}',
-              style: const TextStyle(
+              style: ResponsiveTextStyles.getBodyMedium(context).copyWith(
                 color: Colors.white70,
-                fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: 12.h(context)),
         Container(
-          height: 6,
+          height: 6.h(context),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(3),
+            borderRadius: BorderRadius.circular(3.r(context)),
           ),
           child: AnimatedBuilder(
             animation: _progressAnimation,
@@ -625,7 +622,7 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
                     gradient: const LinearGradient(
                       colors: [Color(0xFF26C6DA), Color(0xFF00BCD4)],
                     ),
-                    borderRadius: BorderRadius.circular(3),
+                    borderRadius: BorderRadius.circular(3.r(context)),
                     boxShadow: [
                       BoxShadow(
                         color: const Color(0xFF26C6DA).withOpacity(0.3),
@@ -639,7 +636,7 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
             },
           ),
         ),
-        const SizedBox(height: 16),
+        SizedBox(height: 16.h(context)),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(_permissionSteps.length, (index) {
@@ -647,9 +644,9 @@ class _PermissionScreenState extends State<PermissionScreen> with TickerProvider
             final isCurrent = index == _currentStep;
             
             return Container(
-              width: 12,
-              height: 12,
-              margin: const EdgeInsets.symmetric(horizontal: 4),
+              width: 12.r(context),
+              height: 12.r(context),
+              margin: EdgeInsets.symmetric(horizontal: 4.w(context)),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: isCompleted 

@@ -1,178 +1,375 @@
+// services/api_service.dart - FIXED VERSION (No dummy coordinates)
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import '../utils/constants.dart';
 
 class ApiService {
+  // OFFICIAL API BASE URL from documentation
+  static const String _baseUrl = 'https://asia-southeast1-nexuspolice-13560.cloudfunctions.net/';
+  
+  // STABILITY TRACKING
+  static bool _isLoggedIn = false;
+  static DateTime? _lastSuccessfulUpdate;
+  static int _consecutiveFailures = 0;
+  static String? _lastDeploymentCode;
+
   static Future<ApiResponse> login(String token, String deploymentCode) async {
-    final url = Uri.parse('${AppConstants.baseUrl}setUnit');
+    final url = Uri.parse('${_baseUrl}setUnit');
     final headers = {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
+    
     final body = json.encode({
       'deploymentCode': deploymentCode,
       'action': 'login',
-      'timestamp': DateTime.now().toIso8601String(),
-      'deviceInfo': {
-        'platform': 'flutter',
-        'version': AppConstants.appVersion,
-      }
     });
 
     try {
-      print('ApiService: Sending login request...');
-      final response = await http.post(url, headers: headers, body: body);
+      print('ApiService: 🔐 Logging in...');
+      print('ApiService: Deployment Code: $deploymentCode');
+      
+      final response = await http.post(
+        url, 
+        headers: headers, 
+        body: body,
+      ).timeout(const Duration(seconds: 10));
+      
       print('ApiService: Login response status: ${response.statusCode}');
+      print('ApiService: Login response: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        _isLoggedIn = true;
+        _lastDeploymentCode = deploymentCode;
+        _consecutiveFailures = 0;
+        print('ApiService: ✅ LOGIN SUCCESS - Unit is now logged in');
+      } else {
+        _isLoggedIn = false;
+        print('ApiService: ❌ LOGIN FAILED - Status: ${response.statusCode}');
+      }
+      
       return ApiResponse.fromResponse(response);
     } catch (e) {
-      print('ApiService: Login network error: $e');
+      print('ApiService: ❌ Login error: $e');
+      _isLoggedIn = false;
       return ApiResponse.error('Network error: ${e.toString()}');
     }
   }
 
   static Future<ApiResponse> logout(String token, String deploymentCode) async {
-    final url = Uri.parse('${AppConstants.baseUrl}setUnit');
+    final url = Uri.parse('${_baseUrl}setUnit');
     final headers = {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
+    
     final body = json.encode({
       'deploymentCode': deploymentCode,
       'action': 'logout',
-      'timestamp': DateTime.now().toIso8601String(),
-      'disconnectFromWebApp': true, // Flag to ensure web app removes the device
-      'reason': 'user_logout',
     });
 
     try {
-      print('ApiService: Sending logout request to disconnect from web app...');
-      final response = await http.post(url, headers: headers, body: body);
+      print('ApiService: 🚪 Logging out...');
+      final response = await http.post(
+        url, 
+        headers: headers, 
+        body: body,
+      ).timeout(const Duration(seconds: 10));
+      
       print('ApiService: Logout response status: ${response.statusCode}');
       
-      // Also send a secondary disconnect request to ensure web app is notified
-      await _sendWebAppDisconnect(token, deploymentCode);
+      if (response.statusCode == 200) {
+        _isLoggedIn = false;
+        _lastDeploymentCode = null;
+        print('ApiService: ✅ LOGOUT SUCCESS');
+      }
       
       return ApiResponse.fromResponse(response);
     } catch (e) {
-      print('ApiService: Logout network error: $e');
+      print('ApiService: Logout error: $e');
       return ApiResponse.error('Network error: ${e.toString()}');
     }
   }
 
-  // Secondary method to ensure web app disconnect
-  static Future<void> _sendWebAppDisconnect(String token, String deploymentCode) async {
-    try {
-      final disconnectUrl = Uri.parse('${AppConstants.baseUrl}disconnectDevice');
-      final headers = {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      };
-      final body = json.encode({
-        'deploymentCode': deploymentCode,
-        'action': 'disconnect',
-        'timestamp': DateTime.now().toIso8601String(),
-        'webAppUrl': 'https://nexuspolice-13560.web.app/map',
-      });
-
-      print('ApiService: Sending additional web app disconnect request...');
-      final response = await http.post(disconnectUrl, headers: headers, body: body);
-      print('ApiService: Web app disconnect response: ${response.statusCode}');
-    } catch (e) {
-      print('ApiService: Web app disconnect error (non-critical): $e');
-      // This is non-critical, so we don't throw an error
-    }
-  }
-
+  // FIXED UPDATE METHOD - Only real coordinates, no dummy data
   static Future<ApiResponse> updateLocation({
     required String token,
     required String deploymentCode,
     required Position position,
     required int batteryLevel,
     required String signalStrength,
+    String? batteryState,
+    String? connectivityType,
   }) async {
-    final url = Uri.parse('${AppConstants.baseUrl}updateLocation');
+    
+    // Check if we need to re-login first
+    if (!_isLoggedIn || _consecutiveFailures > 3) {
+      print('ApiService: ⚠️ Not logged in or too many failures - attempting re-login');
+      final loginResult = await login(token, deploymentCode);
+      if (!loginResult.success) {
+        print('ApiService: ❌ Re-login failed, cannot update location');
+        return loginResult;
+      }
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    final url = Uri.parse('${_baseUrl}updateLocation');
     final headers = {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
+    
+    // ONLY REAL COORDINATES - exact API structure
     final body = json.encode({
       'deploymentCode': deploymentCode,
       'location': {
         'latitude': position.latitude,
         'longitude': position.longitude,
         'accuracy': position.accuracy,
-        'altitude': position.altitude,
-        'speed': position.speed,
-        'heading': position.heading,
-        'timestamp': position.timestamp?.toIso8601String() ?? DateTime.now().toIso8601String(),
       },
-      'deviceStatus': {
-        'batteryLevel': batteryLevel,
-        'batteryStatus': batteryLevel > 20 ? 'normal' : 'low',
-        'signalStrength': signalStrength,
-        'lastUpdate': DateTime.now().toIso8601String(),
-      },
-      'webAppSync': true, // Ensure this update reaches the web app
+      'batteryStatus': batteryLevel,
+      'signal': signalStrength,
     });
 
     try {
-      final response = await http.post(url, headers: headers, body: body);
+      print('ApiService: 📍 Sending REAL location data (no dummy coordinates)...');
+      print('ApiService: 🔋 Battery: $batteryLevel% | 📶 Signal: $signalStrength');
+      print('ApiService: 📍 REAL Lat: ${position.latitude}, Lng: ${position.longitude}');
+      print('ApiService: 🎯 Deployment: $deploymentCode');
+      
+      final response = await http.post(
+        url, 
+        headers: headers, 
+        body: body,
+      ).timeout(const Duration(seconds: 15));
+      
+      print('ApiService: Response Status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        _lastSuccessfulUpdate = DateTime.now();
+        _consecutiveFailures = 0;
+        print('ApiService: ✅ SUCCESS! Real coordinates sent - Green dot should be STABLE!');
+        print('ApiService: 🟢 Last successful update: ${_lastSuccessfulUpdate}');
+        
+        try {
+          final responseData = json.decode(response.body);
+          final success = responseData['success'] ?? false;
+          if (success) {
+            print('ApiService: 🎯 SERVER CONFIRMED SUCCESS - Battery & Signal data received');
+          } else {
+            print('ApiService: ⚠️ Server responded 200 but success=false: ${responseData['message']}');
+          }
+        } catch (e) {
+          print('ApiService: ⚠️ Could not parse response, but status 200 indicates success');
+        }
+        
+      } else if (response.statusCode == 403) {
+        _isLoggedIn = false;
+        _consecutiveFailures++;
+        print('ApiService: ❌ 403 FORBIDDEN - Unit not logged in! Will re-login on next attempt');
+        print('ApiService: Response: ${response.body}');
+      } else {
+        _consecutiveFailures++;
+        print('ApiService: ❌ UPDATE FAILED - Status: ${response.statusCode}');
+        print('ApiService: Error response: ${response.body}');
+        print('ApiService: Consecutive failures: $_consecutiveFailures');
+      }
+      
       return ApiResponse.fromResponse(response);
     } catch (e) {
-      print('ApiService: Location update error: $e');
+      _consecutiveFailures++;
+      print('ApiService: ❌ Network error during update: $e');
+      print('ApiService: Consecutive failures: $_consecutiveFailures');
       return ApiResponse.error('Network error: ${e.toString()}');
     }
   }
 
-  // New method to send status updates to web app
-  static Future<ApiResponse> sendStatusUpdate({
-    required String token,
-    required String deploymentCode,
-    required String status,
-    String? message,
-  }) async {
-    final url = Uri.parse('${AppConstants.baseUrl}updateStatus');
+  // CHECK STATUS with better error handling
+  static Future<ApiResponse> checkStatus(String token, String deploymentCode) async {
+    final url = Uri.parse('${_baseUrl}checkStatus');
     final headers = {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
+    
     final body = json.encode({
       'deploymentCode': deploymentCode,
-      'status': status,
-      'message': message ?? '',
-      'timestamp': DateTime.now().toIso8601String(),
-      'webAppNotification': true,
     });
 
     try {
-      final response = await http.post(url, headers: headers, body: body);
+      print('ApiService: 🔍 Checking unit login status...');
+      final response = await http.post(
+        url, 
+        headers: headers, 
+        body: body,
+      ).timeout(const Duration(seconds: 10));
+      
+      print('ApiService: Status check response: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final isLoggedIn = data['isLoggedIn'] ?? false;
+        _isLoggedIn = isLoggedIn;
+        print('ApiService: 📊 Unit login status from server: $isLoggedIn');
+        
+        if (isLoggedIn) {
+          final loginTime = data['loginTime'];
+          final lastActivity = data['lastActivity'];
+          print('ApiService: Login time: $loginTime');
+          print('ApiService: Last activity: $lastActivity');
+        }
+      } else {
+        print('ApiService: ❌ Status check failed: ${response.body}');
+      }
+      
       return ApiResponse.fromResponse(response);
     } catch (e) {
+      print('ApiService: Status check error: $e');
       return ApiResponse.error('Network error: ${e.toString()}');
     }
   }
 
-  // Method to verify connection with web app
-  static Future<bool> verifyWebAppConnection(String token, String deploymentCode) async {
+  // REMOVED HEARTBEAT METHOD - This was causing the flickering!
+  // The regular updateLocation calls every 5 seconds are sufficient
+
+  // BACKUP METHOD - Only used with REAL coordinates (no dummy data)
+  static Future<void> sendBatterySignalUpdate({
+    required String token,
+    required String deploymentCode,
+    required int batteryLevel,
+    required String signalStrength,
+    String? batteryState,
+    String? connectivityType,
+  }) async {
+    // Skip backup if main method is working
+    if (_consecutiveFailures <= 1 && _lastSuccessfulUpdate != null) {
+      final timeSinceLastSuccess = DateTime.now().difference(_lastSuccessfulUpdate!);
+      if (timeSinceLastSuccess.inMinutes < 5) {
+        print('ApiService: 🔄 Skipping backup - main method working fine');
+        return;
+      }
+    }
+
     try {
-      final url = Uri.parse('${AppConstants.baseUrl}verifyConnection');
+      print('ApiService: 🔄 Sending backup update (ONLY if we have real location)...');
+      
+      // DON'T send backup with dummy coordinates - this causes flickering!
+      // Instead, just skip the backup if we don't have real location data
+      print('ApiService: ℹ️ Backup skipped - only real coordinates allowed');
+      
+    } catch (e) {
+      print('ApiService: Backup error: $e');
+    }
+  }
+
+  // ALTERNATIVE UPDATE - Only with real coordinates
+  static Future<void> sendAlternativeUpdate({
+    required String token,
+    required String deploymentCode,
+    required int batteryLevel,
+    required String signalStrength,
+    required Position position,
+  }) async {
+    // Only use if main method is consistently failing
+    if (_consecutiveFailures <= 2) return;
+
+    try {
+      print('ApiService: 🔄 Sending alternative update with REAL coordinates...');
+      
+      final url = Uri.parse('${_baseUrl}updateLocation');
       final headers = {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       };
+      
+      // ONLY REAL COORDINATES
       final body = json.encode({
         'deploymentCode': deploymentCode,
-        'webAppUrl': 'https://nexuspolice-13560.web.app/map',
-        'timestamp': DateTime.now().toIso8601String(),
+        'location': {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'accuracy': position.accuracy,
+        },
+        'batteryStatus': batteryLevel,
+        'signal': signalStrength,
       });
 
-      final response = await http.post(url, headers: headers, body: body);
-      return response.statusCode == 200;
+      final response = await http.post(
+        url, 
+        headers: headers, 
+        body: body,
+      ).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        print('ApiService: ✅ ALTERNATIVE SUCCESS with real coordinates');
+        _consecutiveFailures = 0;
+      }
+      
     } catch (e) {
-      print('ApiService: Web app connection verification failed: $e');
-      return false;
+      print('ApiService: Alternative error: $e');
     }
+  }
+
+  // DIRECT WEB APP UPDATE - Only real coordinates
+  static Future<void> sendDirectWebAppUpdate({
+    required String deploymentCode,
+    required int batteryLevel,
+    required String signalStrength,
+    required Position position,
+    String? batteryState,
+    String? connectivityType,
+  }) async {
+    // Only use as last resort
+    if (_consecutiveFailures <= 5) return;
+
+    try {
+      print('ApiService: 🎯 Last resort - direct Firebase with REAL coordinates...');
+      
+      final firebaseUrl = Uri.parse('https://nexuspolice-13560-default-rtdb.firebaseio.com/unitlatest/$deploymentCode.json');
+      final headers = {'Content-Type': 'application/json'};
+      
+      // ONLY REAL COORDINATES
+      final payload = {
+        'deploymentCode': deploymentCode,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracy': position.accuracy,
+        'batteryStatus': batteryLevel,
+        'signal': signalStrength,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'servertime': DateTime.now().toIso8601String(),
+      };
+      
+      final response = await http.put(
+        firebaseUrl, 
+        headers: headers, 
+        body: json.encode(payload),
+      ).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        print('ApiService: ✅ DIRECT FIREBASE SUCCESS with real coordinates!');
+        _consecutiveFailures = 0;
+      }
+      
+    } catch (e) {
+      print('ApiService: Direct update error: $e');
+    }
+  }
+
+  // Get stability status for debugging
+  static Map<String, dynamic> getStabilityStatus() {
+    return {
+      'isLoggedIn': _isLoggedIn,
+      'lastSuccessfulUpdate': _lastSuccessfulUpdate?.toIso8601String(),
+      'consecutiveFailures': _consecutiveFailures,
+      'deploymentCode': _lastDeploymentCode,
+      'minutesSinceLastSuccess': _lastSuccessfulUpdate != null 
+        ? DateTime.now().difference(_lastSuccessfulUpdate!).inMinutes 
+        : null,
+    };
   }
 }
 
@@ -197,8 +394,9 @@ class ApiResponse {
       );
     } catch (e) {
       return ApiResponse(
-        success: false,
-        message: 'Invalid response format',
+        success: response.statusCode == 200,
+        message: response.statusCode == 200 ? 'Request successful' : 'Request failed',
+        data: {'statusCode': response.statusCode, 'body': response.body},
       );
     }
   }
